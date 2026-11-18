@@ -1,0 +1,15 @@
+---
+// A "math insight" box: one idea, stated precisely, explained in plain words. No proofs.
+interface Props { title: string }
+const { title } = Astro.props;
+---
+<aside class="insight">
+  <p class="label"><span aria-hidden="true">∑</span> Math insight · {title}</p>
+  <slot />
+</aside>
+
+<style>
+  .insight { margin: 1.8em 0; padding: 0.9em 1.2em; border-radius: 10px; background: var(--insight-soft); border: 1px solid color-mix(in srgb, var(--insight) 30%, transparent); }
+  .label { margin: 0 0 0.4em; font-family: var(--sans); font-size: 0.8rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--insight); }
+  .insight :global(p:last-child) { margin-bottom: 0.2em; }
+</style>

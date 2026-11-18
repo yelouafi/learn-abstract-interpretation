@@ -1,0 +1,36 @@
+---
+import Base from './Base.astro';
+import { CHAPTERS, chapterUrl } from '../chapters';
+
+// Used as the `layout` of chapter MDX files; frontmatter arrives as `frontmatter`.
+const { frontmatter } = Astro.props as { frontmatter: { slug: string; title?: string } };
+const i = CHAPTERS.findIndex((c) => c.slug === frontmatter.slug);
+const ch = CHAPTERS[i];
+const prev = CHAPTERS[i - 1];
+const next = CHAPTERS[i + 1];
+---
+<Base title={`${ch.n}. ${ch.title} · Learn Abstract Interpretation`} current={ch.slug} description={ch.blurb}>
+  <article>
+    <p class="kicker">Chapter {ch.n}</p>
+    <h1>{ch.title}</h1>
+    <p class="lede">{ch.blurb}</p>
+    <slot />
+  </article>
+  <nav class="pager">
+    {prev ? <a href={chapterUrl(prev)}>← {prev.n}. {prev.title}</a> : <span />}
+    {next && (next.ready
+      ? <a class="next" href={chapterUrl(next)}>{next.n}. {next.title} →</a>
+      : <span class="next muted">Next: {next.n}. {next.title} (coming soon)</span>)}
+  </nav>
+</Base>
+
+<style>
+  article { max-width: 46rem; }
+  /* Interactive widgets may use the full width of the main column. */
+  article :global(.wide) { max-width: none; width: min(1100px, calc(100vw - 280px - 4.8rem)); }
+  @media (max-width: 900px) { article :global(.wide) { width: 100%; } }
+  .kicker { font-family: var(--sans); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.78rem; color: var(--accent); margin: 0; font-weight: 600; }
+  .lede { font-size: 1.2rem; color: var(--muted); margin-top: 0; }
+  .pager { max-width: 46rem; display: flex; justify-content: space-between; gap: 1rem; margin-top: 4rem; padding-top: 1.2rem; border-top: 1px solid var(--border); font-family: var(--sans); font-size: 0.95rem; }
+  .next { margin-left: auto; text-align: right; }
+</style>

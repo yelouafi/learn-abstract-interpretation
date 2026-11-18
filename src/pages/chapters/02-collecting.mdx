@@ -1,0 +1,182 @@
+---
+layout: ../../layouts/Chapter.astro
+slug: 02-collecting
+---
+import Insight from '../../components/Insight.astro';
+import Exercise from '../../components/Exercise.astro';
+import Deeper from '../../components/Deeper.astro';
+import Playground from '../../components/Playground.astro';
+
+Before approximating what a program does, we need to say exactly what it does. In this chapter we write an interpreter for a tiny language, then move from "what happens on *this* input" to "what can happen on *any* input". That second object, the **collecting semantics**, is what every analysis in this course approximates.
+
+## Meet Tiny
+
+Tiny has integer variables, arithmetic, `if`, `while`, `assert`, and a way to read unknown input:
+
+```
+x = input();          // an arbitrary integer from the outside world
+y = 0;
+while (x > 0) {
+  x = x - 1;
+  y = y + 2;
+}
+assert(y >= 0);       // stop with an error if false
+```
+
+A few conventions keep things simple:
+
+- Every variable starts at `0`, so there is no "uninitialized" case to handle.
+- Integers are unbounded (no overflow) and `/` truncates toward zero, so `-7 / 2` is `-3`. Dividing by zero is a runtime error.
+- Conditions use `< <= > >= == !=`, combined with `&&`, `||` and `!`.
+
+The [Tiny reference](../../language/) has the full grammar. The parser is a ~200-line recursive-descent parser in `src/lib/parser.ts`, worth a read if you have never written one.
+
+## Running a program
+
+The interpreter (`src/lib/interp.ts`) is the most ordinary code in the project: walk the syntax tree, keep a map from variable names to numbers. Try it: change the input, then drag the slider to step through the execution.
+
+<Playground modes="run" example="countdown" examples="countdown,abs,product,division" inputs="3" />
+
+The gray annotations show the **state** (the value of every variable) the last time execution passed each line. We observe the state at specific places called **program points**:
+
+- after each assignment and each `assert`;
+- at the head of each loop, every time its condition is about to be tested (the `while` line);
+- after an `if` or a `while` finishes (its closing brace).
+
+A run of the program is therefore a sequence of (program point, state) pairs, which is called a **trace**. With input `3`, the loop head on line 3 is reached four times, with `x = 3, 2, 1, 0`. The fourth time, the test fails and the loop exits.
+
+## From one run to all runs
+
+A test answers a question about one input. Questions about programs are about all inputs: *can* this assertion fail? *can* this division crash? So collect, for each program point, the set of **all** states that **any** run can produce there:
+
+$$
+\mathrm{Coll}(p) = \{\, s \mid \text{some run, on some input, is in state } s \text{ at point } p \,\}
+$$
+
+That is the **collecting semantics**. Once you have it, every safety question becomes a set inclusion: "the assertion on line 7 never fails" means every state in $\mathrm{Coll}(\text{line 6})$ satisfies `y >= 0`.
+
+We cannot compute it, since there are infinitely many inputs, but we can sample it. The playground below runs the program on every combination of inputs in a small range and merges what it sees:
+
+<Playground modes="collect" example="countdown" examples="countdown,abs,product,division,two-inputs,copy" />
+
+Play with the range `N`. The sets grow with it and never stop growing for the countdown loop: at the loop head, `y` can be any even number ≥ 0 as inputs grow. The true collecting semantics is infinite. What we compute here is an **under-approximation**: everything shown really happens, but more can happen.
+
+## The collecting semantics as equations
+
+Here is a more useful way to think about it. Write $S_\ell$ for the set of states at line $\ell$ of the countdown program. Each statement turns the set before it into the set after it:
+
+$$
+\begin{aligned}
+S_1 &= \{\, (x{=}n, y{=}0) \mid n \in \mathbb{Z} \,\} && \text{after } x = \mathtt{input}() \\
+S_2 &= \{\, s[y \mapsto 0] \mid s \in S_1 \,\} && \text{after } y = 0 \\
+S_3 &= S_2 \;\cup\; S_5 && \text{loop head: from before the loop, or from the end of the body} \\
+S_4 &= \{\, s[x \mapsto s(x) - 1] \mid s \in S_3,\ s(x) > 0 \,\} && \text{inside the loop, the test is true} \\
+S_5 &= \{\, s[y \mapsto s(y) + 2] \mid s \in S_4 \,\} \\
+S_6 &= \{\, s \in S_3 \mid s(x) \le 0 \,\} && \text{after the loop, the test is false}
+\end{aligned}
+$$
+
+(Here $s[x \mapsto v]$ means "state $s$ with $x$ replaced by $v$".)
+
+Three patterns appear, and they will show up again in every analyzer we write:
+
+1. **Assignments transform** each state.
+2. **Tests filter** the states: keep those where the condition is true (or false, on the other branch).
+3. **Merge points take unions**: after an `if`, and at a loop head, where states arrive from two places.
+
+Notice that $S_3$ depends on $S_5$, which depends on $S_4$, which depends on $S_3$. The loop turns into a **recursive equation**. Its solution is the smallest family of sets satisfying all equations. Chapter 5 shows how to compute such solutions by iterating; for now, notice that the abstract analyzer will solve *the same equations*, with sets replaced by something finite.
+
+<Insight title="semantics as a fixpoint">
+
+Gather all the equations into one function $F$ that takes a guess for every $S_\ell$ and returns the right-hand sides. A solution is a **fixpoint**: $F(S) = S$. The collecting semantics is the **least** fixpoint of $F$, ordered by set inclusion:
+
+$$
+\mathrm{Coll} = \mathrm{lfp}\, F
+$$
+
+This is the starting point of Cousot's whole theory: define the exact meaning of a program as a least fixpoint, and every analysis becomes "approximate that fixpoint with simpler objects".
+
+</Insight>
+
+## A first abstraction, hiding in plain sight
+
+The "all inputs" playground above already approximates. It does not display the sets of *states*; it shows, for each variable separately, the set of values it takes. Load the **Copy then subtract** example and look at line 2:
+
+```
+x = input();
+y = x;
+```
+
+The true set of states at line 2 is $\{(x{=}n, y{=}n) \mid n \in \mathbb{Z}\}$: the diagonal. The per-variable view shows $x \in \{-3..3\}$ and $y \in \{-3..3\}$, which describes the whole 7×7 square of pairs, including $(x{=}1, y{=}-2)$, which never happens.
+
+We lost the **relation** $x = y$ between variables. That is our first abstraction, and nearly free: we keep one set per variable instead of one set of tuples.
+
+<Insight title="non-relational (Cartesian) abstraction">
+
+A set of states $S \subseteq (\mathit{Var} \to \mathbb{Z})$ is abstracted by projecting it on each variable:
+
+$$
+\alpha_{\times}(S) = \lambda x.\ \{\, s(x) \mid s \in S \,\}
+$$
+
+and an abstract map $m$ stands for all states built by picking each variable's value independently:
+
+$$
+\gamma_{\times}(m) = \{\, s \mid \forall x,\ s(x) \in m(x) \,\}
+$$
+
+Always $S \subseteq \gamma_\times(\alpha_\times(S))$: we may add states, never lose any. That inclusion is soundness, again. The added states are the precision we gave up.
+
+</Insight>
+
+Two steps remain before we have a real analyzer:
+
+1. Each per-variable set is still infinite. We need a **finite summary** of a set of integers, such as its sign. That is chapter 3.
+2. We need to run the equations above directly on the summaries, without enumerating inputs. Chapter 3 does that too.
+
+<Exercise n={1} title="trace by hand">
+
+Run the countdown program in your head with input `2`. List the states at the loop head (line 3), in order. How many times is line 3 reached? Check with the first playground.
+
+<Fragment slot="solution">
+
+`(x=2, y=0)`, `(x=1, y=2)`, `(x=0, y=4)`: three times. On the third, `x > 0` is false and the loop exits, so line 6 sees `(x=0, y=4)`.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={2} title="the exact collecting semantics">
+
+Describe, as a mathematical set, all states at the loop head (line 3) of the countdown program over **all** inputs. *Hint: separate negative and positive inputs.*
+
+<Fragment slot="solution">
+
+If the input $n \le 0$, the loop never runs: the head sees only $(x{=}n, y{=}0)$. If $n > 0$, after $k$ iterations the state is $(x{=}n-k, y{=}2k)$ for $k = 0..n$. Together:
+
+$$
+S_3 = \{(n, 0) \mid n \le 0\} \;\cup\; \{(n-k,\ 2k) \mid n > 0,\ 0 \le k \le n\}
+$$
+
+Equivalently: all $(x, y)$ with $y = 0$, or with $x \ge 0$, $y \ge 0$ and $y$ even. Note the relation hidden in this set: $y$ is even and nonnegative. That is the kind of fact an analysis can hope to discover.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={3} title="what does the projection forget?">
+
+At line 4 of **Two inputs** (`z = x * y` inside `if (x > 0 && y > 0)`), the per-variable sets are $x \in \{1..3\}$, $y \in \{1..3\}$, $z \in \{1, 2, 3, 4, 6, 9\}$. Give a state allowed by the Cartesian description that never actually occurs.
+
+<Fragment slot="solution">
+
+For example $(x{=}1, y{=}1, z{=}9)$: each value appears in its set, but $z = x \cdot y$ fails. The non-relational view forgot the relation $z = x \cdot y$.
+
+</Fragment>
+</Exercise>
+
+<Deeper>
+
+- **Cousot, *Principles of Abstract Interpretation***: the chapters on the syntax and semantics of the example language and on *trace semantics*. Cousot builds a hierarchy of semantics (traces → reachable states → …), each an abstraction of the previous one. Our collecting semantics is the reachable-states level.
+- **Rival & Yi**: the early chapters define states, traces and reachable states for a small language very close to Tiny.
+- **Møller & Schwartzbach**: the chapter on the TIP language introduces their toy language and its control-flow graphs; skim it to compare with Tiny.
+
+</Deeper>

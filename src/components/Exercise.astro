@@ -1,0 +1,21 @@
+---
+// An exercise; put the solution in the "solution" slot, it is hidden until clicked.
+interface Props { n: number | string; title?: string }
+const { n, title } = Astro.props;
+---
+<section class="exercise">
+  <p class="label">Exercise {n}{title && <span> · {title}</span>}</p>
+  <slot />
+  <details>
+    <summary>Show solution</summary>
+    <div class="solution"><slot name="solution" /></div>
+  </details>
+</section>
+
+<style>
+  .exercise { margin: 1.4em 0; padding: 0.9em 1.2em; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+  .label { margin: 0 0 0.3em; font-family: var(--sans); font-size: 0.8rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
+  details { margin-top: 0.6em; }
+  summary { cursor: pointer; font-family: var(--sans); font-size: 0.9rem; color: var(--muted); }
+  .solution { margin-top: 0.6em; padding-top: 0.2em; border-top: 1px dashed var(--border); }
+</style>

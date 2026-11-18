@@ -1,0 +1,77 @@
+---
+interface Props {
+  modes?: string;
+  example?: string;
+  examples?: string;
+  inputs?: string;
+  compare?: boolean;
+  caption?: string;
+}
+const { modes, example, examples, inputs, compare, caption } = Astro.props;
+---
+<figure class="pg-figure wide">
+  <ai-playground data-modes={modes} data-example={example} data-examples={examples} data-inputs={inputs} data-compare={compare ? 'true' : undefined}>
+    <noscript>This playground needs JavaScript.</noscript>
+  </ai-playground>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<script>
+  import '../scripts/playground';
+</script>
+
+<style is:global>
+  .pg-figure { margin: 1.8em 0; }
+  .pg-figure figcaption { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); margin-top: 0.5em; }
+  ai-playground {
+    display: block; border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    background: var(--surface); font-family: var(--sans); font-size: 0.9rem; line-height: 1.45;
+  }
+  ai-playground .toolbar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.55rem 0.7rem; background: var(--bg-soft); border-bottom: 1px solid var(--border); }
+  ai-playground select, ai-playground input[type=text], ai-playground input[type=number], ai-playground button {
+    font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem 0.5rem;
+  }
+  ai-playground input[type=number] { width: 4rem; }
+  ai-playground input[type=text] { width: 9rem; font-family: var(--mono); }
+  ai-playground button { cursor: pointer; }
+  ai-playground button:hover { border-color: var(--accent); }
+  ai-playground .tabs { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  ai-playground .tabs button[aria-selected=true] { background: var(--accent); border-color: var(--accent); color: white; }
+  ai-playground .controls { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; align-items: center; padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--border); }
+  ai-playground .controls:empty { display: none; }
+  ai-playground .hint { color: var(--muted); font-size: 0.82rem; margin: 0.3em 0; }
+  ai-playground .editor { border-bottom: 1px solid var(--border); }
+  ai-playground .panel { padding: 0.6rem 0.9rem 0.8rem; }
+  ai-playground .panel:empty { display: none; }
+  ai-playground .status { margin: 0.3em 0; font-weight: 600; }
+  ai-playground .status .muted { font-weight: 400; margin-left: 0.8em; }
+  ai-playground .status.good, ai-playground td.good { color: var(--ok); }
+  ai-playground .status.bad, ai-playground td.bad { color: var(--err); }
+  ai-playground td.warn { color: var(--warn); }
+  ai-playground .stepper { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+  ai-playground .stepper input[type=range] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+  ai-playground .counter { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 6.5rem; text-align: right; }
+  ai-playground .alarms { margin: 0.3em 0; padding-left: 1.2em; }
+  ai-playground .alarms .error { color: var(--err); }
+  ai-playground .alarms .warning { color: var(--warn); }
+  ai-playground details { margin-top: 0.5em; }
+  ai-playground summary { cursor: pointer; color: var(--muted); }
+  ai-playground .iters { font-family: var(--mono); font-size: 0.82rem; margin: 0.2em 0 0.6em; }
+  ai-playground table { width: 100%; font-size: 0.82rem; }
+  ai-playground td.sym { font-family: var(--mono); text-align: center; }
+  ai-playground td.ln { color: var(--muted); vertical-align: top; }
+
+  .cm-annot {
+    margin-left: 1.6em; padding: 0 0.5em; border-radius: 4px; font-size: 0.86em; white-space: pre;
+    font-family: var(--mono); font-variant-ligatures: none; color: var(--accent); background: var(--accent-soft);
+  }
+  .cm-annot.concrete { color: var(--text); background: var(--bg-soft); }
+  .cm-annot.dim { color: var(--muted); background: transparent; font-style: italic; }
+  .cm-annot.good { color: var(--ok); background: var(--ok-soft); }
+  .cm-annot.warn { color: var(--warn); background: var(--warn-soft); }
+  .cm-annot.bad { color: var(--err); background: var(--err-soft); }
+  .cm-line-current { background: var(--accent-soft) !important; }
+  .cm-line-error { background: var(--err-soft) !important; }
+  .cm-line-warn { background: var(--warn-soft) !important; }
+  .cm-line-ok { background: var(--ok-soft) !important; }
+</style>
