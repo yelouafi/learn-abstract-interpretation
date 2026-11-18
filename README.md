@@ -24,7 +24,7 @@ Requires Node 22.23.4 or later.
 
 ```sh
 npm install
-npm run dev      # local site at http://localhost:4321/learn-abstract-interpretation-/
+npm run dev      # local site at http://localhost:4321/learn-abstract-interpretation/
 npm test         # analyzer unit tests (vitest)
 npm run check    # type-check the analyzer and browser scripts
 npm run build    # static site in dist/

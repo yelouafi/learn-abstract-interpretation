@@ -4,10 +4,13 @@ import { unified } from '@astrojs/markdown-remark';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
-// Deployed to GitHub Pages as a project site.
+// Deployed to GitHub Pages as a project site. In CI, BASE_PATH comes from
+// actions/configure-pages, so renaming the repository does not break the site.
+const base = process.env.BASE_PATH || '/learn-abstract-interpretation';
+
 export default defineConfig({
   site: 'https://yelouafi.github.io',
-  base: '/learn-abstract-interpretation-',
+  base,
   trailingSlash: 'ignore',
   integrations: [mdx()],
   markdown: {
