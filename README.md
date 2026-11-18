@@ -11,7 +11,7 @@ analyzer for a tiny language one idea at a time, with interactive playgrounds an
 | 1 | Why approximate? | ✅ |
 | 2 | A tiny language and its collecting semantics | ✅ |
 | 3 | Signs: your first abstract domain | ✅ |
-| 4 | Galois connections | planned |
+| 4 | Galois connections | ✅ |
 | 5 | Loops are fixpoints | planned |
 | 6 | Intervals, widening and narrowing | planned |
 | 7 | Building a real analyzer (CFG, worklist) | planned |
@@ -38,7 +38,9 @@ src/lib/            the analyzer, framework-free TypeScript with tests
   interp.ts         concrete interpreter, program points, traces
   collecting.ts     collecting semantics by exhaustive testing on small inputs
   domain.ts         ValueDomain interface (lattice + abstract operators)
-  domains/sign.ts   the sign domain
+  domains/sign.ts   the 5-element sign domain
+  domains/signs8.ts the 8-element extended sign domain
+  domains/index.ts  domain registry, generic α
   analyzer.ts       generic abstract interpreter (if → join, while → fixpoint)
   soundness.ts      checks analysis results against testing
   examples.ts       example programs used by pages and tests
@@ -48,7 +50,8 @@ src/pages/          the site (chapters are MDX with KaTeX math)
 ```
 
 To add a domain: implement `ValueDomain<V>` in `src/lib/domains/`, add it to the
-soundness test in `src/lib/lib.test.ts`, and add a mode to the playground.
+law and soundness tests in `src/lib/domains.test.ts`, and register it in
+`src/lib/domains/index.ts` so the playground's domain picker can use it.
 
 ## Deployment
 

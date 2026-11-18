@@ -5,13 +5,16 @@
 //   data-examples  comma list of example ids for the picker   (default: all)
 //   data-inputs    initial inputs for run mode, e.g. "3, -1"
 //   data-compare   "true" to open the "compare with testing" table in signs mode
+//   data-domains   comma list of domain ids for signs mode (default: "signs"); a picker
+//                  appears when there is more than one
 
 import { parse, ParseError } from '../lib/parser';
 import type { Program } from '../lib/ast';
 import { run, programPoints, type Env, type Point } from '../lib/interp';
 import { collect } from '../lib/collecting';
 import { analyze, type AEnv } from '../lib/analyzer';
-import { SignDomain as S, alphaSign, type Sign } from '../lib/domains/sign';
+import type { ValueDomain } from '../lib/domain';
+import { domainById, alphaOf, type DomainEntry } from '../lib/domains';
 import { EXAMPLES, example } from '../lib/examples';
 import { createEditor, type Annotation } from './editor';
 
@@ -35,7 +38,8 @@ function pointsByLine(p: Program): Map<number, Point> {
 }
 
 const showEnv = (env: Env) => Object.entries(env).map(([k, v]) => `${k}=${v}`).join('  ');
-const showAEnv = (env: AEnv<Sign>) => env ? Object.entries(env).map(([k, v]) => `${k}: ${S.show(v)}`).join('   ') : '⊥ unreachable';
+const showAEnv = <V>(D: ValueDomain<V>, env: AEnv<V>) =>
+  env ? Object.entries(env).map(([k, v]) => `${k}: ${D.show(v)}`).join('   ') : '⊥ unreachable';
 
 function showSet(ns: number[]): string {
   const s = [...new Set(ns)].sort((a, b) => a - b);
@@ -57,6 +61,8 @@ class Playground extends HTMLElement {
   private inputs = '';
   private range = 3;
   private compare = false;
+  private domains: DomainEntry[] = [];
+  private domain!: DomainEntry;
 
   connectedCallback() {
     if (this.editor) return;
@@ -64,6 +70,8 @@ class Playground extends HTMLElement {
     this.mode = this.modes[0];
     this.inputs = this.dataset.inputs ?? '3';
     this.compare = this.dataset.compare === 'true';
+    this.domains = (this.dataset.domains ?? 'signs').split(',').map((s) => domainById(s.trim()));
+    this.domain = this.domains[0];
     const ids = this.dataset.examples ? this.dataset.examples.split(',').map((s) => s.trim()) : EXAMPLES.map((e) => e.id);
     const initial = example(this.dataset.example ?? ids[0]);
 
@@ -193,12 +201,13 @@ class Playground extends HTMLElement {
 
   // ---- sign analysis ----------------------------------------------------------------
   private showSigns(p: Program) {
-    const a = analyze(p, S);
+    const D: ValueDomain<any> = this.domain.domain;
+    const a = analyze(p, D);
     const annots = new Map<number, Annotation>();
     const cls = new Map<number, string>();
     for (const [ln, pt] of pointsByLine(p)) {
       const env = a.states.get(pt.key) ?? null;
-      annots.set(ln, { text: showAEnv(env), cls: env ? 'abstract' : 'dim' });
+      annots.set(ln, { text: showAEnv(D, env), cls: env ? 'abstract' : 'dim' });
     }
     for (const al of a.alarms) {
       cls.set(al.line, al.severity === 'error' ? 'cm-line-error' : 'cm-line-warn');
@@ -221,6 +230,12 @@ class Playground extends HTMLElement {
     const toggle = h('input', { type: 'checkbox' }) as HTMLInputElement;
     toggle.checked = this.compare;
     toggle.addEventListener('change', () => { this.compare = toggle.checked; this.refresh(); });
+    if (this.domains.length > 1) {
+      const pick = h('select', { 'aria-label': 'Abstract domain' },
+        ...this.domains.map((d) => { const o = h('option', { value: d.id }, d.label); o.selected = d === this.domain; return o; })) as HTMLSelectElement;
+      pick.addEventListener('change', () => { this.domain = domainById(pick.value); this.refresh(); });
+      this.controls.append(h('label', {}, 'Domain ', pick));
+    }
     this.controls.append(h('label', {}, toggle, ' Compare with testing'));
 
     const alarms = a.alarms.length
@@ -235,15 +250,15 @@ class Playground extends HTMLElement {
       for (const [id, hist] of loops) {
         const line = pts.find((q) => q.key === `head:${id}`)?.line;
         det.append(h('p', { class: 'hint' }, `Loop on line ${line}: ${hist.length} iteration${hist.length > 1 ? 's' : ''} until stable`),
-          h('ol', { class: 'iters' }, ...hist.map((e) => h('li', {}, showAEnv(e)))));
+          h('ol', { class: 'iters' }, ...hist.map((e) => h('li', {}, showAEnv(D, e)))));
       }
       this.panel.append(det);
     }
 
-    if (this.compare) this.panel.append(this.compareTable(p, a.states));
+    if (this.compare) this.panel.append(this.compareTable(p, D, a.states));
   }
 
-  private compareTable(p: Program, states: Map<string, AEnv<Sign>>) {
+  private compareTable<V>(p: Program, D: ValueDomain<V>, states: Map<string, AEnv<V>>) {
     const c = collect(p, { range: 3, maxRuns: 2000, fuel: 300 });
     const tbody = h('tbody');
     for (const pt of programPoints(p)) {
@@ -251,20 +266,20 @@ class Playground extends HTMLElement {
       const abs = states.get(pt.key) ?? null;
       p.vars.forEach((x, i) => {
         const seen = envs.map((e) => e[x]);
-        const alpha = alphaSign(seen);
-        const an: Sign = abs ? abs[x] : 'bot';
-        const verdict = !S.leq(alpha, an) ? ['UNSOUND', 'bad'] : alpha === an ? ['exact', 'good'] : ['over-approximated', 'warn'];
+        const alpha = alphaOf(D, seen);
+        const an: V = abs ? abs[x] : D.bottom;
+        const verdict = !D.leq(alpha, an) ? ['UNSOUND', 'bad'] : D.leq(an, alpha) ? ['exact', 'good'] : ['over-approximated', 'warn'];
         tbody.append(h('tr', {},
           i === 0 ? Object.assign(h('td', { class: 'ln' }, String(pt.line)), { rowSpan: p.vars.length }) : '',
           h('td', {}, x),
           h('td', {}, envs.length ? showSet(seen) : 'never reached'),
-          h('td', { class: 'sym' }, S.show(alpha)),
-          h('td', { class: 'sym' }, S.show(an)),
+          h('td', { class: 'sym' }, D.show(alpha)),
+          h('td', { class: 'sym' }, D.show(an)),
           h('td', { class: verdict[1] }, verdict[0])));
       });
     }
     return h('div', { class: 'compare' },
-      h('p', { class: 'hint' }, 'Testing runs every input in −3..3. α(seen) is the most precise sign describing the values tests saw. Soundness means the analysis is never below α(seen); "over-approximated" marks where it lost precision (or where tests were not exhaustive).'),
+      h('p', { class: 'hint' }, 'Testing runs every input in −3..3. α(seen) is the most precise abstract value describing the values tests saw. Soundness means the analysis is never below α(seen); "over-approximated" marks where it lost precision (or where tests were not exhaustive).'),
       h('div', { class: 'table-wrap' }, h('table', {},
         h('thead', {}, h('tr', {}, ...['Line', 'Var', 'Values seen in tests', 'α(seen)', 'Analysis', ''].map((t) => h('th', {}, t)))),
         tbody)));

@@ -1,0 +1,151 @@
+---
+// Two sign lattices side by side. Type a set S of integers: each lattice highlights α(S)
+// and shows what γ(α(S)) adds to S. Click any element a to check the Galois property
+// α(S) ⊑ a ⟺ S ⊆ γ(a) on both sides.
+import { SignDomain, SIGN_LATTICE } from '../lib/domains/sign';
+import { Signs8Domain, SIGNS8_LATTICE } from '../lib/domains/signs8';
+
+type Pos = Record<string, [number, number]>;
+const lattices = [
+  {
+    id: 'signs', title: 'Signs (5 elements)', D: SignDomain as any, L: SIGN_LATTICE as any,
+    pos: { top: [160, 30], neg: [60, 130], zero: [160, 130], pos: [260, 130], bot: [160, 230] } as Pos,
+  },
+  {
+    id: 'signs8', title: 'Extended signs (8 elements)', D: Signs8Domain as any, L: SIGNS8_LATTICE as any,
+    pos: { 7: [160, 25], 3: [60, 95], 5: [160, 95], 6: [260, 95], 1: [60, 165], 2: [160, 165], 4: [260, 165], 0: [160, 235] } as Pos,
+  },
+];
+const presets = ['3, 7, 12', '0, 4', '-2, 5', '-1, -6', '0', '', '-3, 0, 2'];
+---
+<figure class="galois wide">
+  <div class="gx-input">
+    <label>A set <i>S</i> of integers:
+      <input type="text" value="0, 4" spellcheck="false" aria-label="Set of integers" />
+    </label>
+    <div class="gx-presets">
+      {presets.map((p) => <button type="button" data-preset={p}>{`{${p}}`}</button>)}
+    </div>
+  </div>
+  <div class="gx-cols">
+    {lattices.map(({ id, title, D, L, pos }) => (
+      <section class="gx-col" data-dom={id}>
+        <h4>{title}</h4>
+        <svg viewBox="0 0 320 260" role="img" aria-label={`Hasse diagram: ${title}`}>
+          {L.covers.map(([a, b]: [any, any]) => (
+            <line x1={pos[a][0]} y1={pos[a][1]} x2={pos[b][0]} y2={pos[b][1]} />
+          ))}
+          {L.elements.map((e: any) => (
+            <g class="node" data-el={String(e)} tabindex="0" role="button" aria-label={`${D.show(e)}: ${L.describe[e]}`}>
+              <circle cx={pos[e][0]} cy={pos[e][1]} r="22" />
+              <text x={pos[e][0]} y={pos[e][1] + 6}>{D.show(e)}</text>
+            </g>
+          ))}
+        </svg>
+        <dl>
+          <dt>α(S)</dt><dd data-out="alpha"></dd>
+          <dt>γ(α(S))</dt><dd data-out="gamma"></dd>
+          <dt>added</dt><dd data-out="added"></dd>
+        </dl>
+        <div class="gx-check" data-out="check">Click an element <i>a</i> to test the Galois property.</div>
+      </section>
+    ))}
+  </div>
+  <figcaption>
+    Green (dashed) is α(S), the best description of S. "Added" lists values, among −5..5, that γ(α(S)) contains but S does not:
+    the precision the abstraction gives up. Clicking an element <i>a</i> checks both sides of α(S) ⊑ a ⟺ S ⊆ γ(a). They always agree.
+  </figcaption>
+</figure>
+
+<script>
+  import { SignDomain, SIGN_LATTICE, type Sign } from '../lib/domains/sign';
+  import { Signs8Domain, SIGNS8_LATTICE } from '../lib/domains/signs8';
+  import { alphaOf } from '../lib/domains';
+  import type { ValueDomain } from '../lib/domain';
+
+  const DOMS: Record<string, { D: ValueDomain<any>; describe: Record<string, string>; parse: (s: string) => any }> = {
+    signs: { D: SignDomain, describe: SIGN_LATTICE.describe, parse: (s) => s as Sign },
+    signs8: { D: Signs8Domain, describe: SIGNS8_LATTICE.describe, parse: (s) => Number(s) },
+  };
+  const WINDOW = Array.from({ length: 11 }, (_, i) => i - 5);
+
+  for (const root of document.querySelectorAll<HTMLElement>('.galois')) {
+    const input = root.querySelector<HTMLInputElement>('input')!;
+    const picked: Record<string, string | null> = { signs: null, signs8: null };
+
+    const render = () => {
+      const S = [...new Set(input.value.split(/[\s,]+/).filter(Boolean).map(Number).filter(Number.isFinite).map(Math.trunc))];
+      for (const col of root.querySelectorAll<HTMLElement>('.gx-col')) {
+        const { D, describe, parse } = DOMS[col.dataset.dom!];
+        const out = (k: string) => col.querySelector<HTMLElement>(`[data-out="${k}"]`)!;
+        const a = alphaOf(D, S);
+        const sel = picked[col.dataset.dom!];
+        for (const n of col.querySelectorAll<SVGGElement>('.node')) {
+          const e = parse(n.dataset.el!);
+          n.classList.toggle('is-alpha', D.leq(e, a) && D.leq(a, e));
+          n.classList.toggle('is-picked', n.dataset.el === sel);
+        }
+        out('alpha').textContent = D.show(a);
+        out('gamma').textContent = describe[String(a)];
+        const added = WINDOW.filter((n) => D.contains(a, n) && !S.includes(n));
+        out('added').textContent = added.length ? `${added.join(', ')}${D.contains(a, 6) || D.contains(a, -6) ? ', …' : ''}` : 'nothing: exact';
+        const check = out('check');
+        if (sel === null) {
+          check.className = 'gx-check';
+          check.innerHTML = 'Click an element <i>a</i> to test the Galois property.';
+        } else {
+          const e = parse(sel);
+          const left = D.leq(a, e);
+          const right = S.every((n) => D.contains(e, n));
+          check.className = `gx-check ${left === right ? 'agree' : 'disagree'}`;
+          check.textContent = `a = ${D.show(e)}:   α(S) ⊑ a ? ${left ? 'yes' : 'no'}   ·   S ⊆ γ(a) ? ${right ? 'yes' : 'no'}   ${left === right ? '✓ agree' : '✗ disagree'}`;
+        }
+      }
+    };
+
+    for (const col of root.querySelectorAll<HTMLElement>('.gx-col')) {
+      for (const n of col.querySelectorAll<SVGGElement>('.node')) {
+        const pick = () => {
+          const dom = col.dataset.dom!;
+          picked[dom] = picked[dom] === n.dataset.el ? null : n.dataset.el!;
+          render();
+        };
+        n.addEventListener('click', pick);
+        n.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); } });
+      }
+    }
+    for (const b of root.querySelectorAll<HTMLButtonElement>('[data-preset]')) {
+      b.addEventListener('click', () => { input.value = b.dataset.preset!; render(); });
+    }
+    input.addEventListener('input', render);
+    render();
+  }
+</script>
+
+<style>
+  .galois { margin: 1.8em 0; border: 1px solid var(--border); border-radius: 12px; padding: 1rem; background: var(--surface); font-family: var(--sans); font-size: 0.9rem; }
+  .gx-input label { font-weight: 600; }
+  .gx-input input { font: inherit; font-family: var(--mono); margin-left: 0.5em; padding: 0.25rem 0.5rem; width: 12rem; max-width: 100%; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+  .gx-presets { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+  .gx-presets button { font: inherit; font-family: var(--mono); font-size: 0.8rem; cursor: pointer; padding: 0.15rem 0.5rem; border: 1px solid var(--border); border-radius: 99px; background: var(--bg-soft); color: var(--text); }
+  .gx-presets button:hover { border-color: var(--accent); }
+  .gx-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.2rem; margin-top: 0.8rem; }
+  .gx-col h4 { margin: 0 0 0.3rem; font-size: 0.95rem; }
+  svg { width: 100%; max-width: 320px; height: auto; display: block; margin: 0 auto; }
+  line { stroke: var(--border); stroke-width: 2; }
+  .node { cursor: pointer; }
+  .node:focus { outline: none; }
+  .node circle { fill: var(--bg-soft); stroke: var(--muted); stroke-width: 1.5; }
+  .node text { text-anchor: middle; font-family: var(--serif); font-size: 17px; fill: var(--text); pointer-events: none; }
+  .node:hover circle, .node:focus circle { stroke: var(--accent); stroke-width: 2.5; }
+  .node.is-alpha circle { fill: var(--ok-soft); stroke: var(--ok); stroke-width: 3; stroke-dasharray: 5 3; }
+  .node.is-picked circle { fill: var(--accent); stroke: var(--accent); }
+  .node.is-picked text { fill: white; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.2em 0.8em; margin: 0.6rem 0; }
+  dt { font-weight: 600; }
+  dd { margin: 0; font-family: var(--mono); font-size: 0.84rem; }
+  .gx-check { font-family: var(--mono); font-size: 0.8rem; padding: 0.4rem 0.6rem; border-radius: 6px; background: var(--bg-soft); color: var(--muted); white-space: pre-wrap; }
+  .gx-check.agree { background: var(--ok-soft); color: var(--ok); }
+  .gx-check.disagree { background: var(--err-soft); color: var(--err); }
+  figcaption { font-size: 0.85rem; color: var(--muted); margin-top: 0.8rem; }
+</style>

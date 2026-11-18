@@ -6,11 +6,12 @@ interface Props {
   inputs?: string;
   compare?: boolean;
   caption?: string;
+  domains?: string;
 }
-const { modes, example, examples, inputs, compare, caption } = Astro.props;
+const { modes, example, examples, inputs, compare, caption, domains } = Astro.props;
 ---
 <figure class="pg-figure wide">
-  <ai-playground data-modes={modes} data-example={example} data-examples={examples} data-inputs={inputs} data-compare={compare ? 'true' : undefined}>
+  <ai-playground data-modes={modes} data-example={example} data-examples={examples} data-inputs={inputs} data-compare={compare ? 'true' : undefined} data-domains={domains}>
     <noscript>This playground needs JavaScript.</noscript>
   </ai-playground>
   {caption && <figcaption>{caption}</figcaption>}

@@ -60,7 +60,7 @@ function atomTimes(a: Atom, b: Atom): Atom[] {
   return [a === b ? 'pos' : 'neg'];
 }
 
-function atomNeg(a: Atom): Atom {
+export function atomNeg(a: Atom): Atom {
   return a === 'neg' ? 'pos' : a === 'pos' ? 'neg' : 'zero';
 }
 
@@ -71,7 +71,7 @@ function atomDiv(a: Atom, b: Atom): Atom[] {
   return ['zero', a === b ? 'pos' : 'neg'];
 }
 
-function atomOp(op: BinOp, a: Atom, b: Atom): Atom[] {
+export function atomOp(op: BinOp, a: Atom, b: Atom): Atom[] {
   switch (op) {
     case '+': return atomPlus(a, b);
     case '-': return atomPlus(a, atomNeg(b));
