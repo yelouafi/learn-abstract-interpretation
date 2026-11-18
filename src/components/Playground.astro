@@ -22,8 +22,6 @@ const { modes, example, examples, inputs, compare, caption, domains } = Astro.pr
 </script>
 
 <style is:global>
-  .pg-figure { margin: 1.8em 0; }
-  .pg-figure figcaption { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); margin-top: 0.5em; }
   ai-playground {
     display: block; border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
     background: var(--surface); font-family: var(--sans); font-size: 0.9rem; line-height: 1.45;
@@ -62,17 +60,4 @@ const { modes, example, examples, inputs, compare, caption, domains } = Astro.pr
   ai-playground td.sym { font-family: var(--mono); text-align: center; }
   ai-playground td.ln { color: var(--muted); vertical-align: top; }
 
-  .cm-annot {
-    margin-left: 1.6em; padding: 0 0.5em; border-radius: 4px; font-size: 0.86em; white-space: pre;
-    font-family: var(--mono); font-variant-ligatures: none; color: var(--accent); background: var(--accent-soft);
-  }
-  .cm-annot.concrete { color: var(--text); background: var(--bg-soft); }
-  .cm-annot.dim { color: var(--muted); background: transparent; font-style: italic; }
-  .cm-annot.good { color: var(--ok); background: var(--ok-soft); }
-  .cm-annot.warn { color: var(--warn); background: var(--warn-soft); }
-  .cm-annot.bad { color: var(--err); background: var(--err-soft); }
-  .cm-line-current { background: var(--accent-soft) !important; }
-  .cm-line-error { background: var(--err-soft) !important; }
-  .cm-line-warn { background: var(--warn-soft) !important; }
-  .cm-line-ok { background: var(--ok-soft) !important; }
 </style>

@@ -1,0 +1,234 @@
+---
+layout: ../../layouts/Chapter.astro
+slug: 05-fixpoints
+---
+import Insight from '../../components/Insight.astro';
+import Exercise from '../../components/Exercise.astro';
+import Deeper from '../../components/Deeper.astro';
+import FixpointStepper from '../../components/FixpointStepper.astro';
+
+Loops are what make program analysis hard: a loop can run any number of times, and we have to account for all of them in finite time. Chapter 2 hinted at the answer: a program is a **system of equations**, and its meaning is the **least solution**. Chapter 3's analyzer found loop invariants by "iterating until nothing changes" without saying why that works. This chapter makes the idea explicit, solves the equations step by step, and shows why the same algorithm is exact on concrete states and always terminates on signs.
+
+## A program is a system of equations
+
+Give every program point an unknown $X_i$: the set of states that can reach that point (or, in an analysis, an abstract description of it). Each statement gives one equation, using the three patterns of chapter 2:
+
+- **assignment** transforms its input: $X_1 = ⟦x = \mathtt{input}()⟧\, X_0$;
+- **test** filters it: $[x > 0]\, X_3$ keeps only the states where $x > 0$ can hold;
+- **merge point** joins: the loop head is $X_3 = X_2 \sqcup X_5$, reached from before the loop *or* from the end of the body.
+
+The widget below builds these equations automatically from the code (open **Equations**). They are an ordinary data structure in `src/lib/equations.ts`: each unknown has a right-hand side, both as text and as a function that evaluates it.
+
+## Solving by iteration
+
+How do you solve equations where $X_3$ depends on $X_5$, which depends on $X_4$, which depends on $X_3$? Start from the most optimistic guess, *nothing reaches anywhere* ($\bot$ everywhere), and repeatedly recompute every right-hand side until nothing changes:
+
+$$
+X^0 = (\bot, \bot, \dots, \bot) \qquad X^{k+1} = F(X^k) \qquad \text{stop when } X^{k+1} = X^k
+$$
+
+where $F$ is the whole system: it takes a value for every unknown and returns all the right-hand sides at once. This is **Kleene iteration**. Press **▶ Play**, or step with **▶**:
+
+<FixpointStepper example="countdown" examples="countdown,abs,product,division,dead-code,forever" domain="signs8" />
+
+Watch *Countdown* with extended signs and the default "all at once" strategy:
+
+1. In round 1 only $X_0$ (the program start) knows anything. Then knowledge flows forward one equation per round, like a wave: $X_1$, then $X_2$, then the loop head $X_3$.
+2. In round 5 the wave enters the loop body ($X_4$) and also the loop exit ($X_6$): with $y = 0$ so far, it is not yet "known" that `y` can grow.
+3. In round 7 the body's result reaches the loop head again: $X_3$ becomes $0 \sqcup + = {\ge 0}$. That change goes around the loop once more.
+4. After round 9 another round changes nothing. The values in the last column are the **least fixpoint**, the same results the playground's analyzer shows.
+
+## Why this works
+
+Three facts make Kleene iteration correct. Each is a classic theorem; you only need the statements.
+
+<Insight title="monotonicity">
+
+Every equation is built from assignments, filters and joins, and each of these is **monotone**: more states in, more states out. So the whole system $F$ is monotone:
+
+$$
+X \sqsubseteq Y \;\Longrightarrow\; F(X) \sqsubseteq F(Y)
+$$
+
+Starting from $\bot$, which is below everything, this makes the iterates climb: $\bot \sqsubseteq F(\bot) \sqsubseteq F^2(\bot) \sqsubseteq \dots$ Values only move *up* the lattice, as you can see in the table: a cell never goes back down.
+
+</Insight>
+
+<Insight title="least fixpoints (Tarski, Kleene)">
+
+**Tarski:** a monotone function on a complete lattice has a least fixpoint, $\mathrm{lfp}\,F$, the smallest $X$ with $F(X) = X$.
+
+**Kleene:** if $F$ also preserves limits of increasing chains (true for every equation we build), that least fixpoint is the limit of the iterates from $\bot$:
+
+$$
+\mathrm{lfp}\, F = \bigsqcup_{k \ge 0} F^k(\bot)
+$$
+
+So the iteration computes not just *a* solution, but the **least** one: the most precise solution of the equations.
+
+</Insight>
+
+Why insist on the *least* solution? Because the equations have many solutions, and the larger ones are true but useless. Exercise 3 shows one for *Countdown* in which `y` is $\top$ at the loop head. It satisfies every equation, but it can't prove `assert(y >= 0)`. Starting from $\bot$ and only moving up guarantees we stop at the smallest solution.
+
+## The same algorithm, concrete and abstract
+
+Now switch the widget's domain to **Concrete sets of states**. The equations are the same, but each $X_i$ is now a real set of states (with `input()` restricted to $-3..3$ to keep sets finite). The least fixpoint is the **collecting semantics** of chapter 2. The project's tests check that it matches, state for state, what exhaustive testing collects.
+
+Then pick **Counting forever**:
+
+```
+x = 0;
+while (true) {
+  x = x + 1;
+}
+```
+
+On concrete states, the loop head keeps gaining one more state every round or two: $\{0\}$, $\{0, 1\}$, $\{0, 1, 2\}$, … The iteration never stabilizes, because the true answer $\{0, 1, 2, \dots\}$ is infinite. With extended signs, the head goes $0$, then $0 \sqcup + = {\ge 0}$, and stops after five rounds. It also proves something non-obvious: the loop exit $X_4$ and the assignment after it, $X_5$, stay $\bot$, so the line after the loop is unreachable.
+
+<Insight title="termination: finite height">
+
+A lattice has **finite height** if every strictly increasing chain $a_0 \sqsubset a_1 \sqsubset \dots$ is finite. Then the climbing iterates $F^k(\bot)$ must stop changing after finitely many rounds.
+
+Each round that changes something moves at least one variable, at one program point, at least one step up. With $h$ the height of the value lattice, $n$ variables and $p$ program points, there are at most about $h \cdot n \cdot p$ such rounds. Signs have height 2, extended signs height 3. Sets of integers have infinite height, which is exactly why the concrete iteration can run forever.
+
+</Insight>
+
+The analyzer's answer is only trustworthy if the abstract fixpoint covers the concrete one. Chapter 4 already gave us what we need: sound abstract operations.
+
+<Insight title="fixpoint transfer">
+
+If each abstract equation over-approximates its concrete counterpart, $F(\gamma(X^\sharp)) \subseteq \gamma(F^\sharp(X^\sharp))$, then the abstract least fixpoint over-approximates the concrete one:
+
+$$
+\mathrm{lfp}\, F \;\subseteq\; \gamma(\mathrm{lfp}\, F^\sharp)
+$$
+
+This is the central theorem of abstract interpretation in one line. Soundness of each little operation (chapters 3 and 4) gives soundness of the whole analysis, loops included. We never had to reason about all executions directly.
+
+</Insight>
+
+## Invariants are post-fixpoints
+
+There is a programmer's way to read all this. A **loop invariant** is a property that holds when you enter the loop and is preserved by one execution of the body. That is a proof by induction. In equation form, a candidate solution $I$ is an inductive invariant when applying the equations once more doesn't take you outside it:
+
+$$
+F(I) \sqsubseteq I \qquad \text{(a post-fixpoint)}
+$$
+
+Every post-fixpoint is a sound description of the program: by Tarski, $\mathrm{lfp}\, F \sqsubseteq I$. So there are two ways to get one:
+
+- **Guess it and check it**, which is what you do when you write a loop invariant in a proof, or when a verifier asks for annotations. Checking costs one application of $F$.
+- **Compute it** by Kleene iteration, which finds the *strongest* one automatically, but may take many rounds, or forever on infinite-height domains.
+
+Chapter 6 introduces a third way, **widening**: iterate, but jump upward aggressively so that you land on *some* post-fixpoint quickly, even when the least one is too far away.
+
+## Order matters, but only for speed
+
+Switch the strategy from **All at once** to **In order**. Now each equation is evaluated top to bottom, and each one immediately sees values updated earlier in the same round, instead of waiting for the next round. On *Countdown* with extended signs, the fixpoint arrives after 2 rounds instead of 9 (plus, in both cases, one final round that confirms nothing changes). On concrete states it takes 4 rounds instead of 15.
+
+The final values are identical. This is no accident:
+
+<Insight title="chaotic iteration">
+
+For a monotone system over a finite-height lattice, you may update the unknowns **in any order**, as long as no unknown is neglected forever. Every such "chaotic" iteration from $\bot$ reaches the same least fixpoint. Only the amount of work depends on the order.
+
+</Insight>
+
+This freedom is what real analyzers exploit. Instead of recomputing every equation every round, they keep a **worklist** of unknowns whose inputs changed, and recompute only those. That is the engine of chapter 7.
+
+## Exercises
+
+<Exercise n={1} title="iterate by hand">
+
+For this program, write the equations, then compute the Jacobi ("all at once") iterates with the 5-element signs until they stabilize. What is the state after the loop? Redo it with extended signs. Check your answers in the widget (type the program in).
+
+```
+x = 0;
+while (x < 10) {
+  x = x + 1;
+}
+```
+
+<Fragment slot="solution">
+
+The equations are:
+
+$$
+\begin{aligned}
+X_1 &= ⟦x = 0⟧\, X_0 & X_2 &= X_1 \sqcup X_3 \\
+X_3 &= ⟦x = x + 1⟧\, [x < 10]\, X_2 & X_4 &= [x \ge 10]\, X_2
+\end{aligned}
+$$
+
+Values of `x`, round by round, for $X_1 \dots X_4$ ($X_0$ is $0$ from round 1):
+
+| round | $X_1$ | $X_2$ | $X_3$ | $X_4$ |
+| --- | --- | --- | --- | --- |
+| 2 | 0 | ⊥ | ⊥ | ⊥ |
+| 3 | 0 | 0 | ⊥ | ⊥ |
+| 4 | 0 | 0 | + | ⊥ |
+| 5 | 0 | ⊤ | + | ⊥ |
+| 6 | 0 | ⊤ | ⊤ | + |
+
+Round 7 changes nothing. After the loop, $x$ is $+$: the filter $[x \ge 10]$ keeps only the positive atom. Note that $X_4$ is $\bot$ until round 6: the exit test $0 \ge 10$ is impossible, so the loop cannot exit before `x` has grown.
+
+With extended signs, the loop head becomes $0 \sqcup + = {\ge 0}$ in round 5, and the body then gives $({\ge 0}) + 1 = +$, so $X_3$ stays $+$. The result after the loop is again $+$. (Proving $x = 10$ needs a domain that can count, such as intervals in chapter 6.)
+
+</Fragment>
+</Exercise>
+
+<Exercise n={2} title="which invariants are inductive?">
+
+For the *Countdown* loop (`while (x > 0) { x = x - 1; y = y + 2; }`, entered with `y = 0` and any `x`), which of these hold at the loop head every time, and which are *inductive* (true on entry and preserved by one pass through the body)?
+
+(a) $y \ge 0$  (b) $y$ is even  (c) $x \ge 0$  (d) $x \ge 0 \lor y = 0$
+
+<Fragment slot="solution">
+
+(a) Inductive: true on entry ($y = 0$) and adding 2 keeps it.
+
+(b) Inductive, for the same reason. Signs can't express it; parity (chapter 4, exercise 3) can.
+
+(c) Not even true: `x` comes from the input and can be negative on entry.
+
+(d) True and inductive. On entry $y = 0$. Inside the body we know $x > 0$, so after `x = x - 1` we have $x \ge 0$. Notice that it relates two variables, so no per-variable domain can represent it. Relational domains (chapter 8) can express invariants like this.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={3} title="a fixpoint that is not least">
+
+For *Countdown* with extended signs, take the least fixpoint and change `y` to $\top$ at $X_3, X_4, X_5, X_6$. Check that the result still satisfies every equation (it is a fixpoint). What does it say about `assert(y >= 0)`? Why does Kleene iteration never produce it?
+
+<Fragment slot="solution">
+
+$X_4 = ⟦x = x - 1⟧\,[x > 0]\, X_3$ keeps $y = \top$; $X_5$ gives $\top + 2 = \top$; the loop head $X_3 = X_2 \sqcup X_5$ gives $0 \sqcup \top = \top$, consistent. $X_6 = [x \le 0]\, X_3$ has $y = \top$. Every equation holds, so it is a fixpoint, but it is above the least one at four points.
+
+With $y = \top$ before the assertion, the filter $[y < 0]$ is not empty, so the assertion "may fail": a false alarm caused only by choosing a bad solution.
+
+Kleene iteration never produces it because the iterates start at $\bot$ and only climb, and they stop at the *first* fixpoint they reach, which by Kleene's theorem is the least one. To ever reach $y = \top$ at the loop head, some equation would have to produce $\top$ from smaller inputs, and none does.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={4} title="why is in-order faster?">
+
+Explain why the in-order strategy reaches the fixpoint after only 2 rounds on *Countdown*, while Jacobi needs 9. What order would you choose for a program with nested loops?
+
+<Fragment slot="solution">
+
+With Jacobi, information advances one equation per round: it takes about as many rounds as the longest chain of dependencies, plus one trip around the loop for each change at the loop head. In order, the equations are already sorted along the control flow, so one round carries information from the start of the program to the end. Only the back edge of the loop (from $X_5$ to $X_3$) goes "backwards" and needs an extra round.
+
+For nested loops, a good order stabilizes the **inner** loop before propagating further: its head and body are recomputed until they stop changing, then the outer loop continues. That is exactly what the structural analyzer of chapter 3 does with its nested `while` iterations. Choosing such orders systematically (weak topological orderings, from Bourdoncle) is the subject of chapter 7.
+
+</Fragment>
+</Exercise>
+
+<Deeper>
+
+- **Cousot, *Principles of Abstract Interpretation***: the chapters on fixpoints (Tarski's theorem, Kleene iteration, constructive versions) and on *fixpoint abstraction*, where the transfer theorem appears in several forms. This is where the book's formality pays off; with the widget in mind, the statements should feel familiar.
+- **P. Cousot & R. Cousot, "Abstract interpretation: a unified lattice model for static analysis of programs by construction or approximation of fixpoints" (POPL 1977)**: the founding paper. It introduces exactly this setting: equations from the program, least fixpoints, and abstract fixpoints approximating concrete ones (plus widening, chapter 6).
+- **Møller & Schwartzbach**: the lattice theory chapter states the fixpoint theorem for finite-height lattices, and the dataflow chapter compares naive, round-robin and worklist algorithms, which are the strategies in the widget.
+- **Rival & Yi**: the chapters on the general framework derive analyzers as abstract fixpoint computations, with the same soundness argument.
+
+</Deeper>

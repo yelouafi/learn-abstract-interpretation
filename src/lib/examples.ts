@@ -87,6 +87,16 @@ if (x > 0) {
 `,
   },
   {
+    id: 'forever',
+    title: 'Counting forever',
+    code: `x = 0;
+while (true) {
+  x = x + 1;
+}
+y = 1;            // never reached
+`,
+  },
+  {
     id: 'two-inputs',
     title: 'Two inputs',
     code: `x = input();
