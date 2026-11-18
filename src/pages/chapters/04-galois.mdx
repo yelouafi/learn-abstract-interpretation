@@ -1,0 +1,240 @@
+---
+layout: ../../layouts/Chapter.astro
+slug: 04-galois
+---
+import Insight from '../../components/Insight.astro';
+import Exercise from '../../components/Exercise.astro';
+import Deeper from '../../components/Deeper.astro';
+import Playground from '../../components/Playground.astro';
+import GaloisExplorer from '../../components/GaloisExplorer.astro';
+
+Chapter 3 ended with false alarms whose cause was the *shape* of the domain: the property we needed, $y \ge 0$, had no name among our five signs. In this chapter we fix that with a better domain. That fix raises a general question: what makes a set of abstract values, together with α and γ, a *correct* abstraction? The answer is a Galois connection, the idea Cousot's theory is built on.
+
+## A better sign domain
+
+The five-element domain had to round "$0$ or $+$" up to $\top$. So let's stop rounding: allow **every** set of atoms as an abstract value. Three new elements appear:
+
+| New value | Atoms | Meaning |
+| --- | --- | --- |
+| $\ge 0$ | $0, +$ | zero or positive |
+| $\le 0$ | $-, 0$ | negative or zero |
+| $\ne 0$ | $-, +$ | anything but zero |
+
+Since an abstract value is now *exactly* a set of three atoms, the implementation is a 3-bit mask, and the lattice operations are bitwise:
+
+```ts
+type Sign8 = number;                      // bit 1 = neg, bit 2 = zero, bit 4 = pos
+
+leq:  (a, b) => (a & ~b) === 0,           // ⊑ is "subset of"
+join: (a, b) => a | b,                    // ⊔ is union
+meet: (a, b) => a & b,                    // ⊓ is intersection
+fromAtoms: (as) => as.reduce((v, a) => v | BIT[a], 0),   // α on atoms: no rounding!
+```
+
+Everything else is unchanged: arithmetic and tests reuse the same atom tables as chapter 3 (`atomOp`, `cmpPossible`). The *only* difference between the two domains is α, the function that turns a set of atoms into an abstract value. In the 5-element domain it rounds two-atom sets up to $\top$; here it keeps them.
+
+Here is the same analyzer with either domain. Switch the **Domain** picker on *Countdown* and *Absolute value*:
+
+<Playground modes="signs,collect" domains="signs8,signs" example="countdown" examples="countdown,abs,product,copy,square,division" />
+
+With extended signs, both assertions are proved. In *Countdown*, the loop head now gets $0 \sqcup + = {\ge 0}$; the body gives $({\ge 0}) + (+) = +$, and joining with $0$ again gives $\ge 0$: stable, and `y >= 0` holds. *Copy then subtract* and *Squares* still fail. Their problem is lost relations between variables, which no per-variable domain can fix (chapter 8).
+
+## What is an abstraction, exactly?
+
+We now have two domains describing the same concrete objects, sets of integers. What do they have in common that makes them *correct*? Two functions:
+
+- **γ (concretization)** says what an abstract value *means*: the set of integers it stands for. It must be monotone: a less precise value means a bigger set.
+- **α (abstraction)** gives the *best* description of a set of integers: the most precise abstract value whose meaning contains the set.
+
+These two are not independent. "$a$ correctly describes $S$" can be said on either side, in the abstract world or in the concrete one, and both must agree:
+
+$$
+\alpha(S) \sqsubseteq a \quad\iff\quad S \subseteq \gamma(a)
+$$
+
+Try it below. Type a set $S$ (or pick a preset) and watch α choose a different element in each lattice. Then click any element $a$ to test both sides of the equivalence.
+
+<GaloisExplorer />
+
+Things to notice:
+
+- For $S = \{0, 4\}$, the 5-element domain must pick $\top$ and "adds" every negative number. The 8-element domain picks $\ge 0$ and only adds the other positives.
+- Both domains add a lot: every abstract value except $0$ and $\bot$ stands for an infinite set. That loss is the deal we make to get finite, computable descriptions.
+- Clicking around never produces a disagreement. That is the Galois property at work.
+
+<Insight title="Galois connection">
+
+A **Galois connection** between the concrete lattice $(\wp(\mathbb{Z}), \subseteq)$ and an abstract lattice $(A, \sqsubseteq)$ is a pair of functions $\alpha : \wp(\mathbb{Z}) \to A$ and $\gamma : A \to \wp(\mathbb{Z})$ such that, for all $S$ and $a$,
+
+$$
+\alpha(S) \sqsubseteq a \iff S \subseteq \gamma(a)
+$$
+
+Written $\wp(\mathbb{Z}) \underset{\alpha}{\overset{\gamma}{\leftrightarrows}} A$. Read it as a contract: *α never claims more than γ can back up, and never claims less than necessary.*
+
+</Insight>
+
+## What the contract gives you for free
+
+This one equivalence has a surprising number of consequences, and each one is something the analyzer relies on. No proofs here; each follows in two or three lines from the definition, and Cousot's book has them all.
+
+<Insight title="five consequences">
+
+1. **Abstraction loses no behaviour:** $S \subseteq \gamma(\alpha(S))$. Describing a set and reading the description back can add values, never drop one. That is soundness in its smallest form.
+2. **Concretization adds nothing:** $\alpha(\gamma(a)) \sqsubseteq a$. For both sign domains it is even an equality, because no two abstract values mean the same set. (Such a connection is called a **Galois insertion**.)
+3. **α preserves joins:** $\alpha(S \cup T) = \alpha(S) \sqcup \alpha(T)$. So for a finite set, $\alpha(S) = \bigsqcup_{n \in S} \alpha(\{n\})$, which is exactly how the code computes it:
+   ```ts
+   let v = D.bottom;
+   for (const n of S) v = D.join(v, D.fromConst(n));
+   ```
+4. **Each function determines the other:** $\alpha(S) = \mathop{\Large\sqcap} \{\, a \mid S \subseteq \gamma(a) \,\}$, the meet of all correct descriptions. If you know what your abstract values *mean*, the best abstraction is already fixed.
+5. **The best abstract operator is $\alpha \circ f \circ \gamma$**, and every *sound* abstract operator $f^\sharp$ is above it: $\alpha \circ f \circ \gamma \sqsubseteq f^\sharp$. "Sound" and "best" are now precise terms you can check against.
+
+</Insight>
+
+Consequence 3 is worth a pause. In chapter 3 we wrote α for signs by hand, as a function on sets of atoms. Here `alphaOf` is one generic function that works for *any* domain given only `join` and `fromConst`. The playground's "Compare with testing" table and the explorer above both use it. A theorem turned into a reusable helper.
+
+## When there is no best description
+
+Galois connections are not automatic. Suppose we wanted a domain with the values $\bot$, *Even*, *Odd*, *Small* (meaning $\{0, \dots, 9\}$) and $\top$. What is the best description of $\{2, 4\}$? Both *Even* and *Small* are correct. Neither is below the other, and there is no element for "small and even". There is no best answer, so there is no α, and no Galois connection.
+
+The general rule is easy to remember:
+
+> A best abstraction exists for every set exactly when the sets your abstract values stand for are **closed under intersection**.
+
+Here $\gamma(\textit{Even}) \cap \gamma(\textit{Small}) = \{0, 2, 4, 6, 8\}$ has no name, so the domain fails. Add *SmallEven* and *SmallOdd* and it works again.
+
+This is not just a classroom curiosity. Real domains sometimes lack a best abstraction on purpose. The **polyhedra** domain (chapter 8) describes sets of points by linear inequalities, and a disc has no best polyhedral over-approximation: you can always add one more side. Analyzers built on such domains keep only γ and soundness ($f(\gamma(a)) \subseteq \gamma(f^\sharp(a))$). They give up "best", but remain correct. Cousot's book treats both styles; Galois connections are the comfortable case when you can have them.
+
+## Abstractions of abstractions
+
+Look at the two lattices again. Every 5-element sign *is* an 8-element sign, and the 5-element domain is just the 8-element one with $\le 0$, $\ne 0$ and $\ge 0$ sent to $\top$. So the coarser domain is itself an abstraction of the finer one:
+
+$$
+\wp(\mathbb{Z}) \;\underset{\alpha_8}{\overset{\gamma_8}{\leftrightarrows}}\; \text{Signs}_8 \;\underset{\alpha_{8\to5}}{\overset{\gamma_{5\to8}}{\leftrightarrows}}\; \text{Signs}_5
+$$
+
+and abstracting in two steps gives the same answer as abstracting directly: $\alpha_5 = \alpha_{8\to5} \circ \alpha_8$.
+
+<Insight title="domains form a hierarchy">
+
+Galois connections **compose**: chaining $\wp(\mathbb{Z}) \leftrightarrows A$ and $A \leftrightarrows B$ gives a Galois connection $\wp(\mathbb{Z}) \leftrightarrows B$. So abstract domains can be compared: $B$ is *coarser* than $A$ when it is an abstraction of $A$.
+
+At the top sits the concrete semantics; at the bottom, the useless domain $\{\bot, \top\}$ ("reachable or not"). Everything we build in this course lives in between. Some domains are not comparable at all: parity (exercise 3) knows nothing about signs, and signs know nothing about parity. Combining such domains (their **product**) is how real analyzers get precise without building one giant domain.
+
+</Insight>
+
+A useful consequence for these two domains, whose operators are both the best possible: analyzing with the finer one never gives a worse result. On every program, the 8-element analysis is at least as precise as the 5-element one, and the project's tests check this on every example.
+
+## From values to whole states
+
+So far α and γ relate sets of *integers* to signs. The analyzer actually works on sets of *states*. The two abstractions of chapters 2 and 3 compose here too: first forget the relations between variables (the Cartesian abstraction of chapter 2), then abstract each variable's values:
+
+$$
+\alpha_{\text{env}}(S) \;=\; \lambda x.\ \alpha\big(\{\, s(x) \mid s \in S \,\}\big)
+\qquad
+\gamma_{\text{env}}(m) \;=\; \{\, s \mid \forall x,\ s(x) \in \gamma(m(x)) \,\}
+$$
+
+That is the type `AEnv<V>` in `analyzer.ts`: one abstract value per variable. One detail: if *any* variable is $\bot$, no state matches, so the whole environment is $\bot$. The code does this "smashing" in `smash()`. Because this lifting is again a Galois connection, everything in this chapter applies to the analyzer as a whole, not just to single values.
+
+## Exercises
+
+<Exercise n={1} title="does a best description exist?">
+
+A domain has values $\bot \sqsubseteq \textit{Small} \sqsubseteq \textit{Nonneg} \sqsubseteq \top$ with $\gamma(\textit{Small}) = \{0, \dots, 9\}$ and $\gamma(\textit{Nonneg}) = \{0, 1, 2, \dots\}$. Is there a Galois connection with $\wp(\mathbb{Z})$? If so, compute $\alpha(\{3, 12\})$ and $\alpha(\{-1\})$. What changes if we add a value *Neg* with $\gamma(\textit{Neg}) = \{\dots, -2, -1\}$, below $\top$ only?
+
+<Fragment slot="solution">
+
+Yes: the described sets $\varnothing \subseteq \{0..9\} \subseteq \mathbb{N} \subseteq \mathbb{Z}$ form a chain, and a chain is closed under intersection. $\alpha(\{3, 12\}) = \textit{Nonneg}$ (12 is not small) and $\alpha(\{-1\}) = \top$.
+
+Adding *Neg* keeps a Galois connection: $\gamma(\textit{Neg}) \cap \gamma(\textit{Nonneg}) = \varnothing = \gamma(\bot)$, and every other intersection is already in the family. Now $\alpha(\{-1\}) = \textit{Neg}$, while $\alpha(\{-1, 3\}) = \top$.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={2} title="sound but not best">
+
+A lazy implementer writes multiplication for extended signs like this: if either operand is $0$, return $0$; if both are atoms ($-$, $0$ or $+$), multiply the atoms; otherwise return $\top$. Is it sound? Is it the best operator? Write a Tiny program that the real operator proves and the lazy one does not.
+
+<Fragment slot="solution">
+
+It is **sound**: whenever it does not return the exact atom product, it returns $\top$, which covers everything. It is **not best**: $({\ge 0}) \times ({\ge 0})$ returns $\top$, while $\alpha \circ \times \circ \gamma$ gives $\ge 0$ (products of non-negatives are non-negative). Consequence 5 in action: $\ge 0 \sqsubseteq \top$.
+
+```
+x = input();
+if (x >= 0) {
+  y = x * x;
+  assert(y >= 0);
+}
+```
+
+Paste it in the playground with extended signs: the assertion is proved. With the lazy operator, `y` would be $\top$ and the assertion "may fail".
+
+</Fragment>
+</Exercise>
+
+<Exercise n={3} title="a parity domain">
+
+Design the parity domain $\bot \sqsubseteq \textit{Even}, \textit{Odd} \sqsubseteq \top$. Give γ, α on a single integer, and the tables for $+$ and $\times$. What does it say about `y` in *Countdown*? Can it prove `assert(y >= 0)`? Sketch it as a `ValueDomain`.
+
+<Fragment slot="solution">
+
+$\gamma(\textit{Even}) = 2\mathbb{Z}$, $\gamma(\textit{Odd}) = 2\mathbb{Z} + 1$; $\alpha(\{n\})$ is the parity of $n$. Addition: $E + E = E$, $E + O = O$, $O + O = E$. Multiplication: $E \times x = E$ for any non-$\bot$ $x$, $O \times O = O$. Division gives $\top$ ($6 / 2 = 3$ is odd, $4 / 2 = 2$ is even).
+
+In *Countdown*, `y` starts at $0$ (*Even*) and the loop adds $2$ (*Even*), so `y` stays *Even* everywhere. But parity says nothing about sign, so `y >= 0` cannot be proved. The two domains know complementary facts; a **product** of signs and parity would know "$y$ is even and $\ge 0$".
+
+```ts
+type Parity = 'bot' | 'even' | 'odd' | 'top';
+const atomsP = (v: Parity) => v === 'bot' ? [] : v === 'top' ? [0, 1] : v === 'even' ? [0] : [1];
+const fromAtomsP = (as: number[]): Parity =>
+  as.length === 0 ? 'bot' : new Set(as).size === 2 ? 'top' : as[0] === 0 ? 'even' : 'odd';
+
+export const ParityDomain: ValueDomain<Parity> = {
+  name: 'Parity', bottom: 'bot', top: 'top',
+  leq: (a, b) => a === b || a === 'bot' || b === 'top',
+  join: (a, b) => (a === b ? a : a === 'bot' ? b : b === 'bot' ? a : 'top'),
+  meet: (a, b) => (a === b ? a : a === 'top' ? b : b === 'top' ? a : 'bot'),
+  fromConst: (n) => (Math.abs(n) % 2 === 0 ? 'even' : 'odd'),
+  contains: (v, n) => atomsP(v).includes(Math.abs(n) % 2),
+  binop(op, a, b) {
+    const out: number[] = [];
+    for (const x of atomsP(a)) for (const y of atomsP(b)) {
+      if (op === '+' || op === '-') out.push((x + y) % 2);
+      else if (op === '*') out.push(x * y);
+      else out.push(0, 1);                       // division: anything
+    }
+    return fromAtomsP(out);
+  },
+  neg: (a) => a,
+  refine: (op, a, b) => op === '==' ? [ParityDomain.meet(a, b), ParityDomain.meet(a, b)] : [a, b],
+  show: (v) => ({ bot: '⊥', even: 'E', odd: 'O', top: '⊤' })[v],
+};
+```
+
+Note the `refine`: only `==` teaches parity anything. `x == y` means they have the same parity; `x < 0` says nothing about parity.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={4} title="the abstraction between the two sign domains">
+
+Write $\alpha_{8\to5}$ for all eight elements. Check, for $S = \{0, 4\}$, that $\alpha_5(S) = \alpha_{8\to5}(\alpha_8(S))$. What is $\gamma_{5 \to 8}$?
+
+<Fragment slot="solution">
+
+$\alpha_{8\to5}$ is the identity on $\bot$, $-$, $0$, $+$, $\top$, and sends $\le 0$, $\ne 0$, $\ge 0$ to $\top$. For $S = \{0, 4\}$: $\alpha_8(S) = {\ge 0}$, then $\alpha_{8\to5}({\ge 0}) = \top = \alpha_5(S)$.
+
+$\gamma_{5\to 8}$ is the inclusion: each 5-element sign is the 8-element sign with the same meaning ($\top \mapsto \top$, $+ \mapsto +$, …).
+
+</Fragment>
+</Exercise>
+
+<Deeper>
+
+- **Cousot, *Principles of Abstract Interpretation***: the chapters on Galois connections and on abstraction in general. This is the heart of the book. You now have the examples to make the definitions concrete; read the statements and the small lemmas, skim the order-theoretic generalizations.
+- **P. Cousot & R. Cousot, "Systematic design of program analysis frameworks" (POPL 1979)**: the paper that introduced Galois connections to program analysis, including the idea of combining domains. Section headings alone are a good map of the field.
+- **Rival & Yi**: their treatment of abstraction works with γ first and adds α when it exists, which matches the "no best description" discussion above.
+- **Møller & Schwartzbach**: the chapter on abstract interpretation formalizes their dataflow analyses with Galois connections. Short and very concrete.
+
+</Deeper>

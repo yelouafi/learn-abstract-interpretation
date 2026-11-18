@@ -250,7 +250,7 @@ $+ \sqcup 0 = {\ge 0}$, and $(+) \div (+) = {\ge 0}$ as well. In *Countdown*, th
 
 *Copy then subtract* and *Squares* still fail: their problem is relational (cause 2), and no per-variable domain fixes it.
 
-In code, this domain is easier than the 5-element one: an abstract value is exactly a **set of atoms**, so `fromAtoms` never has to round. It is the same `binop` with a different α. Try implementing it in `src/lib/domains/`.
+In code, this domain is easier than the 5-element one: an abstract value is exactly a **set of atoms**, so `fromAtoms` never has to round. It is the same `binop` with a different α. Chapter 4 implements exactly this domain and puts it next to the 5-element one.
 
 </Fragment>
 </Exercise>
