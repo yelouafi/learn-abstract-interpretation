@@ -12,7 +12,7 @@ analyzer for a tiny language one idea at a time, with interactive playgrounds an
 | 2 | A tiny language and its collecting semantics | ✅ |
 | 3 | Signs: your first abstract domain | ✅ |
 | 4 | Galois connections | ✅ |
-| 5 | Loops are fixpoints | planned |
+| 5 | Loops are fixpoints | ✅ |
 | 6 | Intervals, widening and narrowing | planned |
 | 7 | Building a real analyzer (CFG, worklist) | planned |
 | 8 | Relational domains | planned |
@@ -41,7 +41,9 @@ src/lib/            the analyzer, framework-free TypeScript with tests
   domains/sign.ts   the 5-element sign domain
   domains/signs8.ts the 8-element extended sign domain
   domains/index.ts  domain registry, generic α
+  states.ts         state lattices: concrete sets of states, abstract environments
   analyzer.ts       generic abstract interpreter (if → join, while → fixpoint)
+  equations.ts      programs as equation systems, Kleene iteration
   soundness.ts      checks analysis results against testing
   examples.ts       example programs used by pages and tests
 src/scripts/        browser code: CodeMirror editor, <ai-playground> element

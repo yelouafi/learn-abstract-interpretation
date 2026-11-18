@@ -77,3 +77,22 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
 .figure { margin: 1.6em 0; text-align: center; }
 .figure figcaption { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); margin-top: 0.4em; }
 .table-wrap { overflow-x: auto; margin: 1em 0; }
+
+/* Figures wrapping interactive widgets (playground, fixpoint stepper). */
+.pg-figure { margin: 1.8em 0; }
+.pg-figure figcaption { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); margin-top: 0.5em; }
+
+/* Editor annotations and line highlights (src/scripts/editor.ts), shared by all widgets. */
+.cm-annot {
+  margin-left: 1.6em; padding: 0 0.5em; border-radius: 4px; font-size: 0.86em; white-space: pre;
+  font-family: var(--mono); font-variant-ligatures: none; color: var(--accent); background: var(--accent-soft);
+}
+.cm-annot.concrete { color: var(--text); background: var(--bg-soft); }
+.cm-annot.dim { color: var(--muted); background: transparent; font-style: italic; }
+.cm-annot.good { color: var(--ok); background: var(--ok-soft); }
+.cm-annot.warn { color: var(--warn); background: var(--warn-soft); }
+.cm-annot.bad { color: var(--err); background: var(--err-soft); }
+.cm-line-current { background: var(--accent-soft) !important; }
+.cm-line-error { background: var(--err-soft) !important; }
+.cm-line-warn { background: var(--warn-soft) !important; }
+.cm-line-ok { background: var(--ok-soft) !important; }

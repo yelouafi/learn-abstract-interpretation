@@ -17,18 +17,11 @@ import type { ValueDomain } from '../lib/domain';
 import { domainById, alphaOf, type DomainEntry } from '../lib/domains';
 import { EXAMPLES, example } from '../lib/examples';
 import { createEditor, type Annotation } from './editor';
+import { h } from './dom';
 
 type Mode = 'run' | 'collect' | 'signs';
 const MODE_LABEL: Record<Mode, string> = { run: '▶ Run once', collect: '∪ All inputs (testing)', signs: '± Sign analysis' };
 
-const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, string> = {}, ...kids: (Node | string)[]) => {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(props)) {
-    if (k === 'class') el.className = v; else el.setAttribute(k, v);
-  }
-  el.append(...kids);
-  return el;
-};
 
 /** For each source line, the last program point displayed on it. */
 function pointsByLine(p: Program): Map<number, Point> {

@@ -1,0 +1,55 @@
+---
+interface Props {
+  example?: string;
+  examples?: string;
+  domain?: 'concrete' | 'signs' | 'signs8';
+  strategy?: 'jacobi' | 'in-order';
+  caption?: string;
+}
+const { example, examples, domain, strategy, caption } = Astro.props;
+---
+<figure class="pg-figure wide">
+  <ai-fixpoint data-example={example} data-examples={examples} data-domain={domain} data-strategy={strategy}>
+    <noscript>This widget needs JavaScript.</noscript>
+  </ai-fixpoint>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<script>
+  import '../scripts/fixpoint';
+</script>
+
+<style is:global>
+  ai-fixpoint {
+    display: block; border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    background: var(--surface); font-family: var(--sans); font-size: 0.9rem; line-height: 1.45;
+  }
+  ai-fixpoint .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.55rem 0.7rem; background: var(--bg-soft); border-bottom: 1px solid var(--border); }
+  ai-fixpoint select, ai-fixpoint button {
+    font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem 0.5rem; max-width: 100%;
+  }
+  ai-fixpoint select { min-width: 0; flex: 1 1 12rem; }
+  ai-fixpoint button { cursor: pointer; }
+  ai-fixpoint button:hover { border-color: var(--accent); }
+  ai-fixpoint button.play { background: var(--accent); border-color: var(--accent); color: white; min-width: 5.5rem; }
+  ai-fixpoint .stepper { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--border); }
+  ai-fixpoint .stepper:empty { display: none; }
+  ai-fixpoint .stepper input[type=range] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+  ai-fixpoint .counter { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 6.5rem; text-align: right; }
+  ai-fixpoint .editor { border-bottom: 1px solid var(--border); }
+  ai-fixpoint .panel { padding: 0.6rem 0.9rem 0.8rem; }
+  ai-fixpoint .status { margin: 0.2em 0 0.5em; font-weight: 600; }
+  ai-fixpoint .status.good { color: var(--ok); }
+  ai-fixpoint .status.bad { color: var(--err); }
+  ai-fixpoint summary { cursor: pointer; color: var(--muted); margin: 0.4em 0; }
+  ai-fixpoint .eqs { list-style: none; padding: 0; margin: 0 0 0.6em; font-family: var(--mono); font-size: 0.84rem; font-variant-ligatures: none; }
+  ai-fixpoint .eqs li { display: flex; flex-wrap: wrap; gap: 0 0.4em; padding: 0.15em 0.4em; border-radius: 4px; }
+  ai-fixpoint .eqs li.changed { background: var(--accent-soft); }
+  ai-fixpoint .eqs .lhs { font-weight: 700; color: var(--accent); min-width: 2em; }
+  ai-fixpoint .eqs .where { margin-left: auto; color: var(--muted); font-family: var(--sans); font-size: 0.78rem; }
+  ai-fixpoint table { font-size: 0.8rem; font-family: var(--mono); font-variant-ligatures: none; }
+  ai-fixpoint td { vertical-align: top; white-space: nowrap; color: var(--muted); }
+  ai-fixpoint td.cur { color: var(--text); }
+  ai-fixpoint th.cur { color: var(--accent); }
+  ai-fixpoint td.changed { background: var(--accent-soft); color: var(--accent); }
+</style>
