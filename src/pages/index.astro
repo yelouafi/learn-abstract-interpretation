@@ -1,0 +1,83 @@
+---
+import Base from '../layouts/Base.astro';
+import Playground from '../components/Playground.astro';
+import { CHAPTERS, chapterUrl, url } from '../chapters';
+---
+<Base title="Learn Abstract Interpretation" description="A hands-on course on abstract interpretation for programmers: build a static analyzer in your browser, one idea at a time.">
+  <header class="hero">
+    <h1>Learn abstract interpretation<br /><span>by building an analyzer</span></h1>
+    <p class="lede">
+      Abstract interpretation is the theory behind static analyzers that <em>prove</em> programs free of whole classes of bugs.
+      This course teaches it the way programmers learn: through a small language and a real analyzer that grows chapter by chapter,
+      with the key mathematical ideas stated clearly and without proof ceremony.
+    </p>
+    <p class="cta"><a class="btn" href={chapterUrl(CHAPTERS[0])}>Start with chapter 1 →</a> <a href={url('playground/')}>or open the playground</a></p>
+  </header>
+
+  <section class="demo">
+    <p class="demo-note">The analyzer running on every input at once. Edit the program and the analysis updates as you type.</p>
+    <Playground modes="signs,collect,run" example="division" />
+  </section>
+
+  <section class="how">
+    <div>
+      <h3>Build it</h3>
+      <p>Every idea becomes TypeScript you can read: an interpreter, abstract domains, fixpoint iteration. The analyzer on these pages is the one in <code>src/lib</code>, with tests.</p>
+    </div>
+    <div>
+      <h3>See it</h3>
+      <p>Playgrounds put concrete runs, exhaustive testing and abstract analysis side by side, so you can watch soundness and precision instead of taking them on faith.</p>
+    </div>
+    <div>
+      <h3>Get the math</h3>
+      <p>"Math insight" boxes give the one definition or theorem that matters, in clean notation and plain words, with pointers to Cousot's book for the full story.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chapters</h2>
+    <ol class="chapters">
+      {CHAPTERS.map((c) => (
+        <li class:list={{ soon: !c.ready }}>
+          <span class="n">{c.n}</span>
+          <div>
+            {c.ready ? <a href={chapterUrl(c)}>{c.title}</a> : <span class="t">{c.title} <em>coming soon</em></span>}
+            <p>{c.blurb}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  </section>
+
+  <section class="books">
+    <h2>Reading companions</h2>
+    <ul>
+      <li><b>Patrick Cousot, <i>Principles of Abstract Interpretation</i></b> (MIT Press, 2021). The reference, by the theory's co-inventor. Dense; each chapter here tells you which parts to read once the idea is built.</li>
+      <li><b>Xavier Rival &amp; Kwangkeun Yi, <i>Introduction to Static Analysis</i></b> (MIT Press, 2020). The most approachable rigorous textbook; closest in spirit to this course.</li>
+      <li><b>Anders Møller &amp; Michael I. Schwartzbach, <i>Static Program Analysis</i></b> (free lecture notes). Very practical: lattices, dataflow, widening on a toy language.</li>
+      <li><b>Antoine Miné, <i>Tutorial on Static Inference of Numeric Invariants by Abstract Interpretation</i></b> (2017). For intervals, octagons and polyhedra (chapters 6–8).</li>
+    </ul>
+  </section>
+</Base>
+
+<style>
+  .hero h1 { font-size: clamp(2rem, 4.5vw, 3rem); margin-top: 0.4rem; }
+  .hero h1 span { color: var(--accent); }
+  .lede { font-size: 1.2rem; color: var(--muted); max-width: 44rem; }
+  .cta { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; font-family: var(--sans); }
+  .btn { background: var(--accent); color: white; text-decoration: none; padding: 0.6rem 1.1rem; border-radius: 8px; font-weight: 600; }
+  .demo { margin: 2.5rem 0 1rem; }
+  .demo-note { font-family: var(--sans); font-size: 0.9rem; color: var(--muted); margin-bottom: -0.8rem; }
+  .how { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.4rem; margin: 2rem 0; }
+  .how h3 { margin: 0 0 0.3rem; }
+  .how p { margin: 0; font-size: 1rem; color: var(--muted); }
+  .chapters { list-style: none; padding: 0; max-width: 46rem; }
+  .chapters li { display: flex; gap: 1rem; padding: 0.8rem 0; border-bottom: 1px solid var(--border); }
+  .chapters .n { font-family: var(--sans); font-weight: 700; color: var(--accent); min-width: 1.5rem; font-size: 1.1rem; }
+  .chapters a, .chapters .t { font-family: var(--sans); font-weight: 600; font-size: 1.05rem; }
+  .chapters .soon .n, .chapters .t { color: var(--muted); }
+  .chapters em { font-style: normal; font-weight: 400; font-size: 0.75rem; border: 1px solid var(--border); border-radius: 99px; padding: 0 0.45rem; margin-left: 0.4rem; }
+  .chapters p { margin: 0.2rem 0 0; font-size: 1rem; color: var(--muted); }
+  .books ul { max-width: 46rem; padding-left: 1.2rem; }
+  .books li { margin: 0.6rem 0; font-size: 1rem; }
+</style>

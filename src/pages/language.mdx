@@ -1,0 +1,77 @@
+---
+layout: ../layouts/Page.astro
+title: The Tiny language
+---
+
+Tiny is the language analyzed throughout this course. It is deliberately small: integers, arithmetic, `if`, `while` and `assert`. That is just enough to have every difficulty of real analysis (branches, loops, unknown inputs) and nothing else.
+
+## Example
+
+```
+n = input();           // an arbitrary integer
+if (n > 0) {
+  r = 1;
+  i = 1;
+  while (i < n) {
+    i = i + 1;
+    r = r * i;
+  }
+  assert(r > 0);
+} else {
+  r = 0;
+}
+```
+
+## Grammar
+
+```
+program := stmt*
+stmt    := IDENT '=' expr ';'
+         | 'if' '(' cond ')' block ('else' (block | if-stmt))?
+         | 'while' '(' cond ')' block
+         | 'assert' '(' cond ')' ';'
+block   := '{' stmt* '}'
+
+cond    := conj ('||' conj)*
+conj    := cneg ('&&' cneg)*
+cneg    := '!' cneg | '(' cond ')' | 'true' | 'false' | expr CMP expr
+CMP     := '<' | '<=' | '>' | '>=' | '==' | '!='
+
+expr    := term (('+' | '-') term)*
+term    := unary (('*' | '/') unary)*
+unary   := '-' unary | NUMBER | IDENT | 'input' '(' ')' | '(' expr ')'
+```
+
+Comments are `// …` to the end of the line, or `/* … */`.
+
+## Semantics
+
+- **Values** are unbounded integers. There is no overflow.
+- **Variables** are global and all start at `0`.
+- **`input()`** returns an arbitrary integer. When running a program, the playground lets you choose the values; when analyzing, they are unknown.
+- **Division** truncates toward zero (`-7 / 2` is `-3`). Dividing by zero is a runtime error that stops the program.
+- **`assert(c)`** stops the program with an error if `c` is false.
+- **Conditions** short-circuit (`&&`, `||`), but since evaluating expressions has no side effects except `input()`, this rarely matters.
+
+## Program points
+
+States are observed at **program points**, shown at the end of the corresponding line in the playground:
+
+| Point | Where it is shown | What it holds |
+| --- | --- | --- |
+| after an assignment or `assert` | that line | the state right after the statement |
+| loop head | the `while` line | the state each time the condition is about to be tested |
+| after `if` / `while` | its closing `}` | the state once the whole statement is finished |
+
+## Source code
+
+| File | What it does |
+| --- | --- |
+| `src/lib/ast.ts` | syntax tree types |
+| `src/lib/parser.ts` | lexer and recursive-descent parser |
+| `src/lib/interp.ts` | concrete interpreter, program points, traces |
+| `src/lib/collecting.ts` | collecting semantics by exhaustive testing on small inputs |
+| `src/lib/domain.ts` | the `ValueDomain` interface every abstract domain implements |
+| `src/lib/domains/sign.ts` | the sign domain |
+| `src/lib/analyzer.ts` | the generic abstract interpreter |
+| `src/lib/soundness.ts` | checks analysis results against testing |

@@ -1,0 +1,130 @@
+---
+layout: ../../layouts/Chapter.astro
+slug: 01-why
+---
+import ApproxDiagram from '../../components/ApproxDiagram.astro';
+import Insight from '../../components/Insight.astro';
+import Exercise from '../../components/Exercise.astro';
+import Deeper from '../../components/Deeper.astro';
+import Playground from '../../components/Playground.astro';
+
+## A question about *every* run
+
+Here is a program in Tiny, the small language we will use on this site:
+
+```
+a = input();
+b = input();
+if (b > 0) {
+  q = a / b;      // safe: b is positive here
+}
+r = a / b;        // b may be zero!
+```
+
+Can this program divide by zero? You can see it at a glance: line 6 crashes when `b` is `0`. But look at what you just did. You did not run the program. You reasoned about **all** its runs at once, and you did it with coarse facts: "after `b > 0`, `b` is positive", "`b` comes from the input, so it can be anything".
+
+Abstract interpretation is a theory of that kind of reasoning, made precise enough that a machine can do it and that we can trust its answer.
+
+## Testing samples, analysis covers
+
+The usual way to check a program is to run it. Each test explores one execution. Below, the program runs on every combination of inputs from −3 to 3. Switch to **Sign analysis** to see the other approach: the analyzer runs once, on *signs* instead of numbers, and covers every possible input.
+
+<Playground modes="collect,signs" example="division" examples="division,dead-code,product" />
+
+Notice the trade-off:
+
+- **Testing** reports real crashes only (here, the runs with `b = 0`), but it says nothing about inputs it did not try. Its answer is an *under-approximation* of what the program can do.
+- **Analysis** covers all inputs, including `b = 1000000`, which no test tried. But it thinks in signs, so it sometimes cannot tell. Its answer is an *over-approximation*.
+
+The picture to keep in mind for the whole course:
+
+<ApproxDiagram variant="tests">
+  The blue region is the set of states the program can actually reach, over all inputs. Tests (dots) explore some of it.
+</ApproxDiagram>
+
+<ApproxDiagram variant="sound">
+  A <b>sound</b> analysis computes a bigger region (dashed) that contains every reachable state. If that region avoids the error states, the program is proved safe, for every input.
+</ApproxDiagram>
+
+<ApproxDiagram variant="alarm">
+  If the approximation is too coarse, it touches the error zone even though the real program never does. The analyzer must then report an alarm. That is a <b>false alarm</b>: the price of soundness.
+</ApproxDiagram>
+
+## Why not compute the exact region?
+
+Because it is impossible in general. Suppose you had a perfect tool `neverCrashes(P)` that always answers correctly. Take any program `Q` and build this one (pseudo-code; Tiny has no procedures):
+
+```
+Q();          // run Q to completion (if it ever completes)
+x = 1 / 0;    // then crash
+```
+
+This program crashes **if and only if `Q` terminates**. So `neverCrashes` would also decide whether arbitrary programs terminate, which Turing proved impossible. The same trick works for any interesting property of program behaviour: "is this assertion always true", "can this pointer be null", "is this value always positive".
+
+<Insight title="Rice's theorem">
+
+Every non-trivial property of what a program *computes* (as opposed to how it is written) is undecidable.
+
+No algorithm can, for every program, answer "yes" or "no" correctly *and* always terminate. Something has to give.
+
+</Insight>
+
+So a program analyzer must give up at least one of three things:
+
+| Give up… | You get… | Examples |
+| --- | --- | --- |
+| covering every execution | **testing, bug finding**: reported bugs are real, but bugs can be missed | unit tests, fuzzing, many linters |
+| always terminating | **exact verification** that may run forever or need human help | model checking without bounds, interactive proofs |
+| always being precise | **sound static analysis**: no bug is missed, but some alarms are false | abstract interpretation (Astrée, Frama-C EVA, IKOS) |
+
+Abstract interpretation makes the third choice, and turns "being imprecise" into an engineering parameter. Coarse abstractions (like signs) are cheap and often too vague. Finer ones (intervals, octagons, polyhedra) cost more and prove more. Most of this course is about designing abstractions and the algorithms that compute with them.
+
+## The plan
+
+Each chapter adds one idea to a real analyzer that runs in your browser, written in TypeScript:
+
+1. **Concrete semantics** (chapter 2): what the program *really* does, including the set of all reachable states.
+2. **Abstract domains** (chapter 3 on): a cheaper representation of sets of values (signs, intervals, …), with operators that mimic the program's operations.
+3. **Fixpoints** (chapter 5): how to handle loops, which can run any number of times, in finite time.
+
+<Insight title="soundness in one line">
+
+If $S$ is the set of reachable states and $A$ is what the analyzer computes (read as a set of states), soundness means
+
+$$
+S \subseteq A
+$$
+
+If moreover $A$ contains no error state, then neither does $S$: the program is safe. The whole theory exists to build $A$ systematically and guarantee this inclusion.
+
+</Insight>
+
+<Exercise n={1} title="sound or not?">
+
+An analyzer reports "no division by zero is possible" for the program at the top of the page. Is that analyzer sound? And one that reports "division by zero is possible on lines 4 and 6"?
+
+<Fragment slot="solution">
+
+The first one is **unsound**: it misses a real crash (line 6 with `b = 0`). The second one is **sound but imprecise**: line 6 is a real problem, but line 4 is a false alarm, because `b > 0` holds there. Soundness only promises that nothing is missed.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={2} title="the trivial analyzer">
+
+Write the simplest possible sound analyzer for "can this program divide by zero?". Why is it useless?
+
+<Fragment slot="solution">
+
+`alwaysSayYes(P) = "maybe"`. Saying "there might be a division by zero" on every division is always sound: it misses nothing. It is useless because it is maximally imprecise. Being sound is easy; being sound **and** precise enough to prove something is the whole art.
+
+</Fragment>
+</Exercise>
+
+<Deeper>
+
+- **Cousot, *Principles of Abstract Interpretation***: the opening chapters give the motivation, the history, and the reason approximation is unavoidable. Read them now for the big picture and skim the formal parts; they will read much more easily after chapter 3.
+- **Rival & Yi, *Introduction to Static Analysis***: the first chapter has the same "reachable states vs. approximation" picture and a clear discussion of soundness and completeness.
+- **Møller & Schwartzbach, *Static Program Analysis*** (free online): the introduction chapter, for an approachable treatment of undecidability.
+
+</Deeper>

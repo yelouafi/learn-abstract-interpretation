@@ -1,0 +1,13 @@
+---
+// "Go deeper" pointers to the books, placed at the end of each chapter.
+---
+<aside class="deeper">
+  <p class="label">Go deeper</p>
+  <slot />
+</aside>
+
+<style>
+  .deeper { margin: 2.4em 0 1em; padding: 0.9em 1.2em; border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0; }
+  .label { margin: 0 0 0.3em; font-family: var(--sans); font-size: 0.8rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
+  .deeper :global(ul) { margin: 0.3em 0; padding-left: 1.2em; }
+</style>

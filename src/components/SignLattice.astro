@@ -1,0 +1,114 @@
+---
+// Interactive Hasse diagram of the sign lattice: pick two elements to see their
+// join and meet; type a set of integers to see its abstraction α.
+import { SIGN_LATTICE, SignDomain as S } from '../lib/domains/sign';
+
+const pos: Record<string, [number, number]> = {
+  top: [160, 30], neg: [60, 120], zero: [160, 120], pos: [260, 120], bot: [160, 210],
+};
+---
+<figure class="lattice-widget">
+  <div class="lw-grid">
+    <svg viewBox="0 0 320 240" role="img" aria-label="Hasse diagram of the sign lattice">
+      {SIGN_LATTICE.covers.map(([a, b]) => (
+        <line x1={pos[a][0]} y1={pos[a][1]} x2={pos[b][0]} y2={pos[b][1]} />
+      ))}
+      {SIGN_LATTICE.elements.map((e) => (
+        <g class="node" data-el={e} tabindex="0" role="button" aria-label={`${S.show(e)}: ${SIGN_LATTICE.describe[e]}`}>
+          <circle cx={pos[e][0]} cy={pos[e][1]} r="22" />
+          <text x={pos[e][0]} y={pos[e][1] + 7}>{S.show(e)}</text>
+        </g>
+      ))}
+    </svg>
+    <div class="lw-side">
+      <p class="lw-help">Click two elements, <b>A</b> then <b>B</b>.</p>
+      <dl class="lw-out">
+        <dt>A</dt><dd data-out="a">–</dd>
+        <dt>B</dt><dd data-out="b">–</dd>
+        <dt>A ⊔ B <small>join</small></dt><dd data-out="join">–</dd>
+        <dt>A ⊓ B <small>meet</small></dt><dd data-out="meet">–</dd>
+        <dt>A ⊑ B ?</dt><dd data-out="leq">–</dd>
+      </dl>
+      <label class="lw-alpha">α of a set of integers:
+        <input type="text" value="3, 7, 12" spellcheck="false" aria-label="Integers" />
+      </label>
+      <p class="lw-alpha-out" data-out="alpha"></p>
+    </div>
+  </div>
+  <figcaption>The sign lattice. Higher means less precise. Lines connect an element to the ones directly above it.</figcaption>
+</figure>
+
+<script>
+  import { SignDomain as S, SIGN_LATTICE, alphaSign, type Sign } from '../lib/domains/sign';
+
+  for (const root of document.querySelectorAll<HTMLElement>('.lattice-widget')) {
+    let a: Sign | null = null, b: Sign | null = null;
+    const out = (k: string) => root.querySelector<HTMLElement>(`[data-out="${k}"]`)!;
+    const nodes = [...root.querySelectorAll<SVGGElement>('.node')];
+    const name = (s: Sign) => `${S.show(s)}  (${SIGN_LATTICE.describe[s]})`;
+
+    const render = (alpha?: Sign) => {
+      const j = a && b ? S.join(a, b) : null;
+      const m = a && b ? S.meet(a, b) : null;
+      for (const n of nodes) {
+        const e = n.dataset.el as Sign;
+        n.classList.toggle('is-a', e === a);
+        n.classList.toggle('is-b', e === b);
+        n.classList.toggle('is-join', e === j);
+        n.classList.toggle('is-meet', e === m);
+        n.classList.toggle('is-alpha', e === alpha);
+      }
+      out('a').textContent = a ? name(a) : '–';
+      out('b').textContent = b ? name(b) : '–';
+      out('join').textContent = j ? name(j) : '–';
+      out('meet').textContent = m ? name(m) : '–';
+      out('leq').textContent = a && b ? (S.leq(a, b) ? 'yes: A is at least as precise as B' : 'no') : '–';
+    };
+
+    const pick = (e: Sign) => {
+      if (!a || (a && b)) { a = e; b = null; } else { b = e; }
+      render();
+    };
+    for (const n of nodes) {
+      n.addEventListener('click', () => pick(n.dataset.el as Sign));
+      n.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(n.dataset.el as Sign); } });
+    }
+
+    const input = root.querySelector<HTMLInputElement>('input')!;
+    const updateAlpha = () => {
+      const ns = input.value.split(/[\s,]+/).filter(Boolean).map(Number).filter(Number.isFinite);
+      const s = alphaSign(ns);
+      out('alpha').textContent = `α({${ns.join(', ')}}) = ${name(s)}`;
+      render(s);
+    };
+    input.addEventListener('input', updateAlpha);
+    updateAlpha();
+  }
+</script>
+
+<style>
+  .lattice-widget { margin: 1.8em 0; border: 1px solid var(--border); border-radius: 12px; padding: 1rem; background: var(--surface); }
+  .lw-grid { display: grid; grid-template-columns: minmax(200px, 320px) 1fr; gap: 1.2rem; align-items: center; }
+  @media (max-width: 640px) { .lw-grid { grid-template-columns: 1fr; } }
+  svg { width: 100%; height: auto; }
+  line { stroke: var(--border); stroke-width: 2; }
+  .node { cursor: pointer; }
+  .node circle { fill: var(--bg-soft); stroke: var(--muted); stroke-width: 1.5; transition: fill 0.15s; }
+  .node text { text-anchor: middle; font-family: var(--serif); font-size: 20px; fill: var(--text); pointer-events: none; }
+  .node:hover circle, .node:focus circle { stroke: var(--accent); stroke-width: 2.5; outline: none; }
+  .node:focus { outline: none; }
+  .node.is-alpha circle { fill: var(--ok-soft); stroke: var(--ok); stroke-dasharray: 4 3; }
+  .node.is-join circle { fill: var(--insight-soft); stroke: var(--insight); stroke-width: 3; }
+  .node.is-meet circle { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 3; }
+  .node.is-a circle, .node.is-b circle { fill: var(--accent); stroke: var(--accent); }
+  .node.is-a text, .node.is-b text { fill: white; }
+  .lw-side { font-family: var(--sans); font-size: 0.9rem; }
+  .lw-help { margin: 0 0 0.5em; color: var(--muted); }
+  .lw-out { display: grid; grid-template-columns: max-content 1fr; gap: 0.25em 0.9em; margin: 0 0 1em; }
+  .lw-out dt { font-weight: 600; }
+  .lw-out dt small { font-weight: 400; color: var(--muted); }
+  .lw-out dd { margin: 0; font-family: var(--mono); font-size: 0.85rem; }
+  .lw-alpha input { font: inherit; font-family: var(--mono); width: 100%; max-width: 16rem; margin-top: 0.3em; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); display: block; }
+  .lw-alpha-out { font-family: var(--mono); font-size: 0.85rem; color: var(--ok); margin: 0.4em 0 0; }
+  figcaption { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); margin-top: 0.6em; }
+</style>

@@ -1,0 +1,10 @@
+---
+import Base from '../layouts/Base.astro';
+import Playground from '../components/Playground.astro';
+import { url } from '../chapters';
+---
+<Base title="Playground · Learn Abstract Interpretation">
+  <h1>Playground</h1>
+  <p class="muted">Write any <a href={url('language/')}>Tiny</a> program. Run it once, test it on all small inputs, or analyze it for every input with the sign domain.</p>
+  <Playground modes="signs,collect,run" example="countdown" compare={true} />
+</Base>

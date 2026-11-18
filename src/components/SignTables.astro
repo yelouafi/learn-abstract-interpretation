@@ -1,0 +1,41 @@
+---
+// Operator tables for the sign domain, generated at build time from the real implementation.
+import type { BinOp } from '../lib/ast';
+import { SignDomain as S, type Sign } from '../lib/domains/sign';
+
+interface Props { ops?: BinOp[] }
+const { ops = ['+', '*'] } = Astro.props;
+const els: Sign[] = ['bot', 'neg', 'zero', 'pos', 'top'];
+---
+<div class="tables">
+  {ops.map((op) => (
+    <table>
+      <thead>
+        <tr><th class="corner">{op === '*' ? '×' : op === '/' ? '÷' : op}</th>{els.map((b) => <th>{S.show(b)}</th>)}</tr>
+      </thead>
+      <tbody>
+        {els.map((a) => (
+          <tr>
+            <th>{S.show(a)}</th>
+            {els.map((b) => {
+              const r = S.binop(op, a, b);
+              return <td class:list={{ top: r === 'top' && a !== 'top' && b !== 'top', bot: r === 'bot' }}>{S.show(r)}</td>;
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ))}
+</div>
+<p class="legend">Rows: left operand. Columns: right operand. <span class="swatch"></span> = precision lost although both operands had a known sign.</p>
+
+<style>
+  .tables { display: flex; flex-wrap: wrap; gap: 1.2rem; margin: 1.2em 0 0.3em; }
+  table { font-family: var(--serif); font-size: 1.05rem; }
+  td, th { text-align: center; min-width: 2.3em; padding: 0.25em 0.5em; }
+  th.corner { background: var(--accent-soft); color: var(--accent); font-family: var(--mono); }
+  td.top { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+  td.bot { color: var(--muted); }
+  .legend { font-family: var(--sans); font-size: 0.82rem; color: var(--muted); }
+  .swatch { display: inline-block; width: 0.9em; height: 0.9em; background: var(--warn-soft); border: 1px solid var(--warn); vertical-align: -0.1em; border-radius: 2px; }
+</style>

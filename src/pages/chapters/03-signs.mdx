@@ -1,0 +1,275 @@
+---
+layout: ../../layouts/Chapter.astro
+slug: 03-signs
+---
+import Insight from '../../components/Insight.astro';
+import Exercise from '../../components/Exercise.astro';
+import Deeper from '../../components/Deeper.astro';
+import Playground from '../../components/Playground.astro';
+import SignLattice from '../../components/SignLattice.astro';
+import SignTables from '../../components/SignTables.astro';
+
+At the end of chapter 2 we had one set of integers per variable, but those sets can be infinite. In this chapter we summarize each set by a single **sign**, rebuild arithmetic, tests and control flow on signs, and get a working analyzer. Every idea in later chapters is a refinement of what we do here.
+
+## Summarize a set by its sign
+
+Instead of “$x \in \{3, 7, 12\}$” we keep only “$x$ is positive”. We need five abstract values:
+
+| Abstract value | Meaning: the set of integers it stands for |
+| --- | --- |
+| $+$ | $\{1, 2, 3, \dots\}$ |
+| $0$ | $\{0\}$ |
+| $-$ | $\{\dots, -3, -2, -1\}$ |
+| $\top$ ("top") | all of $\mathbb{Z}$: we know nothing |
+| $\bot$ ("bottom") | $\varnothing$: no value at all, so this code is unreachable |
+
+The "meaning" column is a function, called the **concretization** $\gamma$ (gamma): $\gamma(+) = \{1, 2, \dots\}$, $\gamma(\top) = \mathbb{Z}$, and so on. In the other direction, the **abstraction** $\alpha$ (alpha) takes a set of integers to the *most precise* sign that covers it: $\alpha(\{3, 7, 12\}) = +$, $\alpha(\{0\}) = 0$, $\alpha(\{-1, 5\}) = \top$, $\alpha(\varnothing) = \bot$.
+
+In code, an abstract value is just a string:
+
+```ts
+type Sign = 'bot' | 'neg' | 'zero' | 'pos' | 'top';
+```
+
+A handful of bits now stands for a possibly infinite set. The rest of this chapter is about computing with these strings without ever going back to sets.
+
+## Ordering by precision
+
+Some abstract values say more than others. $+$ is more precise than $\top$, because $\gamma(+) \subseteq \gamma(\top)$. We write $+ \sqsubseteq \top$ (“$+$ is below $\top$”). This ordering is drawn as a **Hasse diagram**: precise at the bottom, vague at the top.
+
+<SignLattice />
+
+Two operations on this diagram matter, and you can try both above:
+
+- The **join** $a \sqcup b$ is the lowest element above both. It answers "I have either an $a$ or a $b$; what do I know?". Merging $+$ and $0$ gives $\top$: the domain cannot say "non-negative", so it rounds up to "anything".
+- The **meet** $a \sqcap b$ is the highest element below both. It answers "I know it is an $a$ *and* a $b$". The meet of $+$ and $\top$ is $+$; the meet of $+$ and $-$ is $\bot$ (impossible).
+
+The analyzer uses join where control flow merges (after an `if`, at a loop head) and meet when a test tells it something new (`x > 0` means "whatever x was, and positive").
+
+<Insight title="lattices">
+
+A **partial order** $\sqsubseteq$ is reflexive, transitive and antisymmetric, like $\subseteq$ on sets. It is *partial* because some pairs are incomparable: neither $- \sqsubseteq +$ nor $+ \sqsubseteq -$.
+
+A **lattice** is a partial order in which every pair $a, b$ has a least upper bound $a \sqcup b$ and a greatest lower bound $a \sqcap b$. The sets of integers, ordered by $\subseteq$ with $\cup$ and $\cap$, form a lattice; the signs form a much smaller one. Abstract interpretation is about relating the two.
+
+</Insight>
+
+α and γ are tied together by one property, which you can check on the widget: for any set $S$ of integers and any sign $a$,
+
+$$
+\alpha(S) \sqsubseteq a \quad\iff\quad S \subseteq \gamma(a)
+$$
+
+In words: “$a$ is a correct description of $S$” means the same thing on both sides, and $\alpha(S)$ is the best correct description. This is a **Galois connection**, the central tool of chapter 4. For now, keep the slogan: **α picks the best description, γ says what a description means.**
+
+## Abstract arithmetic
+
+To analyze `y = x * 2` we need to multiply signs. The rule for every operator is the same: an abstract operator must cover every concrete result.
+
+> If $x \in \gamma(a)$ and $y \in \gamma(b)$, then $x \text{ op } y \in \gamma(a \text{ op}^\sharp b)$.
+
+The most precise such operator is: concretize, compute on all values, abstract again: $a \text{ op}^\sharp b = \alpha(\{x \text{ op } y \mid x \in \gamma(a), y \in \gamma(b)\})$. We can't run that literally (the sets are infinite), but for signs we can do it by hand on the three "atoms" $-$, $0$, $+$, which partition the integers:
+
+```ts
+function atomPlus(a: Atom, b: Atom): Atom[] {
+  if (a === 'zero') return [b];
+  if (b === 'zero') return [a];
+  if (a === b) return [a];
+  return ['neg', 'zero', 'pos']; // 5 + (-3) = 2, 3 + (-3) = 0, 3 + (-5) = -2
+}
+
+// The abstract operator: try every pair of atoms, collect the results, abstract.
+binop(op, a, b) {
+  const out: Atom[] = [];
+  for (const x of atoms(a)) for (const y of atoms(b)) out.push(...atomOp(op, x, y));
+  return fromAtoms(out); // α: 0 atoms → ⊥, 1 atom → itself, more → ⊤
+}
+```
+
+Here are the tables this code produces. They are generated from the real implementation when the site is built:
+
+<SignTables ops={['+', '-', '*', '/']} />
+
+Some entries to read carefully:
+
+- $(+) + (-) = \top$: the sign of a sum of a positive and a negative depends on their magnitudes, which we threw away.
+- $\top \times 0 = 0$: anything times zero is zero, so even total ignorance gives a precise answer.
+- $(+) \div (+) = \top$: integer division truncates, and $1 \div 2 = 0$. The true answer is “$0$ or $+$”, which this domain can only express as $\top$.
+- $x \div 0 = \bot$: there is no result, because the program crashes. The analyzer reports an alarm whenever the divisor *may* be zero.
+- $\bot$ in, $\bot$ out: no values in, no values out.
+
+<Insight title="soundness of an abstract operator">
+
+For a concrete operation $f$, an abstract version $f^\sharp$ is **sound** when
+
+$$
+f(\gamma(a)) \subseteq \gamma(f^\sharp(a))
+$$
+
+The abstract result may contain extra values (imprecision) but must not miss one (that would be a bug). The **best** abstract operator is
+
+$$
+f^\sharp = \alpha \circ f \circ \gamma
+$$
+
+Read right to left: go to sets, compute exactly, come back to the most precise abstract value. Our atom-by-atom code computes exactly this for signs. For richer domains we often settle for something sound but less than best, because the best operator is too expensive or not computable.
+
+</Insight>
+
+## Tests become filters
+
+In chapter 2, a test like `x > 0` *filtered* the set of states. On signs it does the same, keeping only the atoms that can make the comparison true:
+
+```ts
+refine(op, a, b) {
+  const ka: Atom[] = [], kb: Atom[] = [];
+  for (const x of atoms(a)) for (const y of atoms(b)) {
+    if (cmpPossible(op, x, y)) { ka.push(x); kb.push(y); }   // e.g. pos > zero is possible
+  }
+  return [fromAtoms(ka), fromAtoms(kb)];
+}
+```
+
+With `x` unknown ($\top$):
+
+- `x > 0` keeps only $+$, so inside `if (x > 0) { … }`, `x` is $+$. Precise.
+- `x <= 0` keeps $-$ and $0$, which rounds back up to $\top$. On the `else` branch we learn nothing: the same "non-negative / non-positive" gap as before.
+- `x == 0` keeps only $0$; `x < 0` on a value known to be $+$ keeps nothing, so the branch is **unreachable** ($\bot$).
+
+Refinement only flows back into a variable when it appears bare in the comparison. For `x + 1 > 0` we learn something about the *value* of `x + 1` but don't push it back to `x`. Doing that ("backward abstract arithmetic") is a nice extension for later.
+
+## Putting it together: the analyzer
+
+An **abstract state** maps each variable to a sign, or is $\bot$ if the point is unreachable. The analyzer (`src/lib/analyzer.ts`) mirrors the interpreter of chapter 2 statement by statement, and solves the same equations with signs in place of sets:
+
+| Statement | Interpreter (one state) | Analyzer (abstract state) |
+| --- | --- | --- |
+| `x = e` | evaluate `e`, store it | evaluate `e` with abstract operators, store it |
+| `if (c) A else B` | run *one* branch | run **both**, on the state filtered by `c` and by `!c`, then **join** |
+| `while (c) B` | repeat until `c` is false | repeat until the loop-head state **stops changing**, then filter by `!c` |
+| `assert(c)` | crash if false | **proved** if `!c` filters to $\bot$, otherwise an alarm |
+
+The loop is the interesting case. The loop head receives states from before the loop and from the end of the body, so we start from the entry state and keep joining in what the body produces:
+
+```ts
+let head = entry;
+for (;;) {
+  const bodyOut = exec(s.body, filter(head, s.cond));
+  const next = joinEnv(entry, bodyOut);
+  if (leqEnv(next, head)) break;       // nothing new: we have a loop invariant
+  head = next;
+}
+const exit = filter(head, negate(s.cond));
+```
+
+Each pass can only move values up the lattice, and the sign lattice has height 2 ($\bot \to + \to \top$), so each variable changes at most twice. The loop **must** stop. Open "Loop iterations" under the playground to see the successive loop-head states.
+
+<Insight title="why the loop terminates">
+
+The loop computes the increasing sequence $H_0 \sqsubseteq H_1 \sqsubseteq H_2 \sqsubseteq \dots$ of loop-head states. In a lattice of **finite height** (no infinite strictly increasing chain) it must become stationary, and the limit is a fixpoint: a **loop invariant**, true every time execution reaches the loop head.
+
+With $n$ variables and height-2 signs, there are at most $2n + 1$ iterations. Chapter 6 introduces intervals, a lattice of *infinite* height, where this argument fails and a new idea (widening) is needed.
+
+</Insight>
+
+## Try it
+
+Here is the analyzer on all the examples. Blue annotations are abstract states; assertions get a verdict. Tick **Compare with testing** to put the analysis next to what exhaustive testing saw (chapter 2). The analysis must never be *below* testing: that would be a soundness bug. Where it is above, it lost precision.
+
+<Playground modes="signs,collect,run" example="product" compare={true} />
+
+Things to try:
+
+1. **Product of positives** is fully proved: inside `if (n > 0)`, the analyzer knows `n`, `r` and `i` are positive, and the loop keeps them so.
+2. **Division alarms**: line 4 is safe (`b` is $+$ there); line 6 may divide by zero, and the alarm is real.
+3. **Dead code**: the analyzer proves line 5 unreachable ($\bot$): `y` is $+ \times + = +$, so `y < 0` is impossible.
+4. Edit any program. Analysis reruns as you type.
+
+## Where precision goes
+
+Load **Countdown**, **Absolute value**, **Copy then subtract** and **Squares are non-negative**. Every assertion there is true, the testing tab finds no failure, and yet the analyzer reports "may fail". Each is a false alarm, and each has a different cause.
+
+**1. The domain cannot express the property.** In *Countdown*, `y` starts at $0$ and becomes $+$ in the loop, so at the loop head it is $0 \sqcup + = \top$. The fact we need, $y \ge 0$, has no name in our lattice. Same for *Absolute value*: on the `else` branch, `x >= 0` refines $\top$ to “$0$ or $+$”, which rounds up to $\top$. *Fix: a richer domain* (exercise 3).
+
+**2. Relations between variables are lost.** In *Copy then subtract*, `y = x` makes both $\top$, and $\top - \top = \top$. The analyzer forgot that `y` *is* `x`. In *Squares*, `x * x` is computed as "some $\top$ times some $\top$", as if the two operands were independent. *Fix: relational domains* (chapter 8), or smarter expression handling.
+
+**3. The analysis is non-compositional with tests.** As noted above, `x + 1 > 0` does not refine `x`. *Fix: backward evaluation of expressions.*
+
+There's a lesson here that holds for every analyzer. A false alarm doesn't mean the analyzer is broken. It means the abstraction is too coarse for that program. Choosing an abstraction that is cheap enough and precise enough is the main design work in abstract interpretation.
+
+## Exercises
+
+<Exercise n={1} title="analyze by hand">
+
+Compute, by hand, the sign of every variable after each line, then check with the playground (paste it in).
+
+```
+a = input();
+if (a < 0) {
+  b = a * a;
+  c = 0 - b;
+} else {
+  c = 5;
+}
+```
+
+<Fragment slot="solution">
+
+Line 1: `a` = $\top$. Inside the `then` branch, `a < 0` refines `a` to $-$; `b` = $- \times - = +$; `c` = $0 - (+) = -$. In the `else` branch `a >= 0` gives $\top$ (“$0$ or $+$” rounds up); `c` = $+$. After the `if`, join both branches: `a` = $- \sqcup \top = \top$, `b` = $+ \sqcup 0 = \top$ (b is still $0$ on the else branch), `c` = $- \sqcup + = \top$.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={2} title="spot the unsound table">
+
+A colleague writes `atomPlus('pos', 'neg') = ['pos']` ("the bigger one usually wins"). Write a Tiny program on which the resulting analyzer proves an assertion that actually fails.
+
+<Fragment slot="solution">
+
+```
+x = 1;
+y = 0 - 5;
+z = x + y;
+assert(z > 0);
+```
+
+The analyzer computes `z` = $+$ and proves the assertion, but `z = -4`. The **Compare with testing** table would flag line 3 as **UNSOUND**: tests saw $-4$, whose sign $-$ is not below $+$. The project's unit tests check every operator against sample values for exactly this reason.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={3} title="a better sign domain">
+
+Fix false-alarm cause 1 by adding three elements: $\ge 0$ ("non-negative"), $\le 0$ and $\ne 0$. Draw the new Hasse diagram (8 elements). What is $+ \sqcup 0$ now? Recompute $+ \div +$ and check that *Countdown* and *Absolute value* become provable. Which example remains unprovable, and why?
+
+<Fragment slot="solution">
+
+The elements are $\bot$; the atoms $-$, $0$, $+$; the pairs $\le 0 = \{-, 0\}$, $\ne 0 = \{-, +\}$, $\ge 0 = \{0, +\}$; and $\top$. Each pair sits above its two atoms and below $\top$, so the diagram looks like a cube's projection (it is the lattice of all subsets of the 3 atoms).
+
+$+ \sqcup 0 = {\ge 0}$, and $(+) \div (+) = {\ge 0}$ as well. In *Countdown*, the loop head has $y = 0 \sqcup + = {\ge 0}$, then $({\ge 0}) + (+) = +$, and the join is again $\ge 0$: stable, and `y >= 0` is proved. In *Absolute value*, the `else` branch refines `x` to $\ge 0$, and both branches give `y` $\ge 0$ or better.
+
+*Copy then subtract* and *Squares* still fail: their problem is relational (cause 2), and no per-variable domain fixes it.
+
+In code, this domain is easier than the 5-element one: an abstract value is exactly a **set of atoms**, so `fromAtoms` never has to round. It is the same `binop` with a different α. Try implementing it in `src/lib/domains/`.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={4} title="why not just ⊤?">
+
+Inside a loop, the analyzer starts from the entry state and goes *up*. Why not start the loop head at $\top$ for every variable, which is certainly sound, and go down?
+
+<Fragment slot="solution">
+
+Starting at $\top$ is sound but throws away everything known before the loop, and going down from an over-approximation needs care to stay sound. Starting from below and going up until stable finds the **least** fixpoint: the most precise invariant those equations allow. In *Product of positives*, starting from $\top$ would lose the fact that `r` is positive. (Going down *after* reaching a fixpoint is a real technique, called narrowing; see chapter 6.)
+
+</Fragment>
+</Exercise>
+
+<Deeper>
+
+- **Cousot, *Principles of Abstract Interpretation***: the sign domain is Cousot's classic first example. Look for the chapters on *abstraction* (α, γ, Galois connections) and on *abstract domains*. The definition of the best abstract transformer $\alpha \circ f \circ \gamma$ is the idea to take away; the generic constructions around it can wait.
+- **Rival & Yi**: their running example analyzes signs and then intervals with exactly the structure used here (non-relational environments, filtering on conditions, loops by iteration). It is the closest companion to this chapter.
+- **Møller & Schwartzbach**: the chapters on lattice theory and dataflow analysis use sign analysis as the first example, presented as a monotone framework on a control-flow graph. Seeing the same analysis from that angle is a good preview of chapter 7.
+
+</Deeper>
