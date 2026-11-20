@@ -1,0 +1,211 @@
+---
+// The case-split calculator: computes `a op b` on signs the way the analyzer does, showing
+// every step. 1) list the basic signs each side covers, 2) work out each combination,
+// with real example computations, 3) summarize the collected result as one sign.
+// Comparison operators show how a test refines both sides instead.
+interface Props {
+  a?: string;
+  op?: string;
+  b?: string;
+  domain?: 'signs' | 'signs8';
+  /** Offer a switch between the 5- and 8-element domains. */
+  switchable?: boolean;
+  caption?: string;
+}
+const { a = 'top', op = '+', b = 'pos', domain = 'signs', switchable = false, caption } = Astro.props;
+---
+<figure class="casesplit wide" data-a={a} data-op={op} data-b={b} data-domain={domain}>
+  <div class="cs-row">
+    <select class="cs-a" aria-label="Left operand"></select>
+    <select class="cs-op" aria-label="Operator">
+      <optgroup label="Arithmetic">
+        <option value="+">+</option><option value="-">−</option><option value="*">×</option><option value="/">÷</option>
+      </optgroup>
+      <optgroup label="Test (refines both sides)">
+        <option value="<">&lt;</option><option value="<=">≤</option><option value=">">&gt;</option>
+        <option value=">=">≥</option><option value="==">==</option><option value="!=">!=</option>
+      </optgroup>
+    </select>
+    <select class="cs-b" aria-label="Right operand"></select>
+    {switchable && (
+      <select class="cs-dom" aria-label="Domain">
+        <option value="signs">5 signs</option>
+        <option value="signs8">8 signs</option>
+      </select>
+    )}
+  </div>
+  <div class="cs-out" aria-live="polite"></div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<script>
+  import type { BinOp, CmpOp } from '../lib/ast';
+  import {
+    SignDomain, cases, summarize, possibleSigns, canBeTrue, signOf, SAMPLES, BASIC_SIGNS, type BasicSign,
+  } from '../lib/domains/sign';
+  import { Signs8Domain, cases8, summarize8 } from '../lib/domains/signs8';
+  import { h } from '../scripts/dom';
+
+  interface Dom { values: string[]; show: (v: string) => string; cases: (v: string) => BasicSign[]; summarize: (s: BasicSign[]) => string }
+  const DOMS: Record<string, Dom> = {
+    signs: {
+      values: ['bot', 'neg', 'zero', 'pos', 'top'],
+      show: (v) => SignDomain.show(v as any),
+      cases: (v) => cases(v as any),
+      summarize: (s) => summarize(s),
+    },
+    signs8: {
+      values: ['0', '1', '2', '4', '3', '5', '6', '7'],
+      show: (v) => Signs8Domain.show(Number(v)),
+      cases: (v) => cases8(Number(v)),
+      summarize: (s) => String(summarize8(s)),
+    },
+  };
+  // Map 5-sign values to 8-sign ones when switching domains.
+  const TO8: Record<string, string> = { bot: '0', neg: '1', zero: '2', pos: '4', top: '7' };
+  const TO5: Record<string, string> = { '0': 'bot', '1': 'neg', '2': 'zero', '4': 'pos', '7': 'top', '3': 'top', '5': 'top', '6': 'top' };
+
+  const NAME: Record<BasicSign, string> = { neg: 'negative', zero: 'zero', pos: 'positive' };
+  const SYM: Record<BasicSign, string> = { neg: '−', zero: '0', pos: '+' };
+  const OPSYM: Record<string, string> = { '+': '+', '-': '−', '*': '×', '/': '÷', '<': '<', '<=': '≤', '>': '>', '>=': '≥', '==': '==', '!=': '!=' };
+  const ARITH = ['+', '-', '*', '/'];
+  const paren = (n: number) => (n < 0 ? `(${n})` : String(n));
+  const apply = (op: string, x: number, y: number) =>
+    op === '+' ? x + y : op === '-' ? x - y : op === '*' ? x * y : Math.trunc(x / y);
+  const holds = (op: string, x: number, y: number) =>
+    op === '<' ? x < y : op === '<=' ? x <= y : op === '>' ? x > y : op === '>=' ? x >= y : op === '==' ? x === y : x !== y;
+  const setText = (s: BasicSign[]) => (s.length ? `{${BASIC_SIGNS.filter((x) => s.includes(x)).map((x) => SYM[x]).join(', ')}}` : '{ }');
+  const chip = (text: string, cls = '') => h('span', { class: `chip ${cls}` }, text);
+
+  for (const root of document.querySelectorAll<HTMLElement>('.casesplit')) {
+    let dom = root.dataset.domain ?? 'signs';
+    const selA = root.querySelector<HTMLSelectElement>('.cs-a')!;
+    const selB = root.querySelector<HTMLSelectElement>('.cs-b')!;
+    const selOp = root.querySelector<HTMLSelectElement>('.cs-op')!;
+    const selDom = root.querySelector<HTMLSelectElement>('.cs-dom');
+    const out = root.querySelector<HTMLElement>('.cs-out')!;
+
+    const fill = (sel: HTMLSelectElement, value: string) => {
+      const D = DOMS[dom];
+      sel.replaceChildren(...D.values.map((v) => {
+        const o = h('option', { value: v }, D.show(v)) as HTMLOptionElement;
+        o.selected = v === value;
+        return o;
+      }));
+    };
+    const toDom = (v: string) => (dom === 'signs8' ? (TO8[v] ?? v) : v);
+    fill(selA, toDom(root.dataset.a!));
+    fill(selB, toDom(root.dataset.b!));
+    selOp.value = root.dataset.op!;
+    if (selDom) {
+      selDom.value = dom;
+      selDom.addEventListener('change', () => {
+        const conv = (v: string) => (selDom.value === 'signs8' ? (TO8[v] ?? v) : (TO5[v] ?? v));
+        const a = conv(selA.value), b = conv(selB.value);
+        dom = selDom.value;
+        fill(selA, a); fill(selB, b);
+        render();
+      });
+    }
+
+    const render = () => {
+      const D = DOMS[dom];
+      const a = selA.value, b = selB.value, op = selOp.value;
+      const ca = D.cases(a), cb = D.cases(b);
+      const arith = ARITH.includes(op);
+
+      // Step 1: cases.
+      const step1 = h('div', { class: 'step' },
+        h('p', { class: 'label' }, '1 · Split each side into the basic signs it covers'),
+        h('p', {}, chip(D.show(a), 'val'), ' covers ', ca.length ? ca.map((c) => NAME[c]).join(', ') : 'nothing (⊥)'),
+        h('p', {}, chip(D.show(b), 'val'), ' covers ', cb.length ? cb.map((c) => NAME[c]).join(', ') : 'nothing (⊥)'));
+
+      // Step 2: grid of combinations.
+      const step2 = h('div', { class: 'step' },
+        h('p', { class: 'label' }, arith ? '2 · Work out each combination (with real examples)' : '2 · Can the test be true in each combination?'));
+      const keepA: BasicSign[] = [], keepB: BasicSign[] = [], results: BasicSign[] = [];
+      if (!ca.length || !cb.length) {
+        step2.append(h('p', { class: 'muted' }, 'No combinations: one side is ⊥, so there is nothing to compute.'));
+      } else {
+        const table = h('table', {},
+          h('thead', {}, h('tr', {}, h('th', {}, `a ${OPSYM[op]} b`), ...cb.map((y) => h('th', {}, `b ${NAME[y]}`)))),
+          h('tbody', {}, ...ca.map((x) => h('tr', {}, h('th', {}, `a ${NAME[x]}`), ...cb.map((y) => {
+            const td = h('td', {});
+            if (arith) {
+              const signs = possibleSigns(op as BinOp, x, y);
+              results.push(...signs);
+              if (!signs.length) {
+                td.append(chip('crash', 'bad'), h('div', { class: 'ex' }, 'division by zero: no result'));
+              } else {
+                td.append(...signs.map((s) => chip(SYM[s], 'res')));
+                for (const s of signs) {
+                  const ex = SAMPLES[x].flatMap((u) => SAMPLES[y].filter((v) => !(op === '/' && v === 0)).map((v) => [u, v]))
+                    .find(([u, v]) => signOf(apply(op, u, v)) === s)!;
+                  td.append(h('div', { class: 'ex' }, `${paren(ex[0])} ${OPSYM[op]} ${paren(ex[1])} = ${apply(op, ex[0], ex[1])}`));
+                }
+              }
+            } else {
+              const ok = canBeTrue(op as CmpOp, x, y);
+              if (ok) {
+                keepA.push(x); keepB.push(y);
+                const ex = SAMPLES[x].flatMap((u) => SAMPLES[y].map((v) => [u, v])).find(([u, v]) => holds(op, u, v))!;
+                td.append(chip('possible', 'ok'), h('div', { class: 'ex' }, `e.g. ${ex[0]} ${OPSYM[op]} ${ex[1]}`));
+              } else {
+                td.className = 'no';
+                td.append(chip('impossible', 'bad'), h('div', { class: 'ex' }, `never true for a ${NAME[x]} and a ${NAME[y]}`));
+              }
+            }
+            return td;
+          })))));
+        step2.append(h('div', { class: 'table-wrap' }, table));
+      }
+
+      // Step 3: summarize.
+      const step3 = h('div', { class: 'step' }, h('p', { class: 'label' }, '3 · Summarize as one abstract value'));
+      const summary = (label: string, signs: BasicSign[]) => {
+        const uniq = BASIC_SIGNS.filter((s) => signs.includes(s));
+        const v = D.summarize(uniq);
+        const rounded = D.cases(v).length > uniq.length;
+        return h('p', {}, `${label}: possible signs ${setText(uniq)} → `, chip(D.show(v), 'val big'),
+          rounded ? h('span', { class: 'note' }, ` rounded up: this domain has no value meaning exactly ${setText(uniq)}`) : '');
+      };
+      if (arith) {
+        step3.append(summary(`a ${OPSYM[op]} b`, results));
+      } else if (ca.length && cb.length && !keepA.length) {
+        step3.append(h('p', {}, 'The test can never be true: this branch is ', chip('unreachable (⊥)', 'bad'), '.'));
+      } else {
+        step3.append(summary('a, refined', keepA), summary('b, refined', keepB));
+      }
+      out.replaceChildren(step1, step2, step3);
+    };
+
+    selA.addEventListener('change', render);
+    selB.addEventListener('change', render);
+    selOp.addEventListener('change', render);
+    render();
+  }
+</script>
+
+<style>
+  .casesplit { margin: 1.8em 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); font-family: var(--sans); font-size: 0.9rem; overflow: hidden; }
+  .cs-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.6rem 0.8rem; background: var(--bg-soft); border-bottom: 1px solid var(--border); }
+  .cs-row select { font: inherit; font-family: var(--serif); font-size: 1.05rem; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.2rem 0.5rem; }
+  .cs-row .cs-dom { font-family: var(--sans); font-size: 0.9rem; margin-left: auto; }
+  .cs-out { padding: 0.4rem 0.9rem 0.8rem; }
+  .cs-out :global(.step) { margin: 0.5rem 0; }
+  .cs-out :global(.label) { margin: 0.6rem 0 0.3rem; font-size: 0.78rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
+  .cs-out :global(p) { margin: 0.25rem 0; }
+  .cs-out :global(.muted) { color: var(--muted); }
+  .cs-out :global(table) { font-size: 0.85rem; }
+  .cs-out :global(td) { vertical-align: top; min-width: 7rem; }
+  .cs-out :global(td.no) { background: var(--bg-soft); }
+  .cs-out :global(.ex) { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem; font-variant-ligatures: none; }
+  .cs-out :global(.chip) { display: inline-block; font-family: var(--serif); padding: 0 0.45rem; margin-right: 0.25rem; border-radius: 99px; border: 1px solid var(--border); background: var(--bg-soft); }
+  .cs-out :global(.chip.val) { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .cs-out :global(.chip.big) { font-size: 1.1rem; font-weight: 600; }
+  .cs-out :global(.chip.res) { color: var(--insight); border-color: var(--insight); background: var(--insight-soft); }
+  .cs-out :global(.chip.ok) { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); font-family: var(--sans); font-size: 0.78rem; }
+  .cs-out :global(.chip.bad) { color: var(--err); border-color: var(--err); background: var(--err-soft); font-family: var(--sans); font-size: 0.78rem; }
+  .cs-out :global(.note) { color: var(--warn); font-size: 0.85rem; }
+  figcaption { font-size: 0.85rem; color: var(--muted); padding: 0 0.9rem 0.8rem; }
+</style>

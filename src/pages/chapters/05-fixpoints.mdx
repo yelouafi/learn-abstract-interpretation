@@ -170,7 +170,7 @@ Values of `x`, round by round, for $X_1 \dots X_4$ ($X_0$ is $0$ from round 1):
 | 5 | 0 | ⊤ | + | ⊥ |
 | 6 | 0 | ⊤ | ⊤ | + |
 
-Round 7 changes nothing. After the loop, $x$ is $+$: the filter $[x \ge 10]$ keeps only the positive atom. Note that $X_4$ is $\bot$ until round 6: the exit test $0 \ge 10$ is impossible, so the loop cannot exit before `x` has grown.
+Round 7 changes nothing. After the loop, $x$ is $+$: the filter $[x \ge 10]$ keeps only the positive case. Note that $X_4$ is $\bot$ until round 6: the exit test $0 \ge 10$ is impossible, so the loop cannot exit before `x` has grown.
 
 With extended signs, the loop head becomes $0 \sqcup + = {\ge 0}$ in round 5, and the body then gives $({\ge 0}) + 1 = +$, so $X_3$ stays $+$. The result after the loop is again $+$. (Proving $x = 10$ needs a domain that can count, such as intervals in chapter 6.)
 
