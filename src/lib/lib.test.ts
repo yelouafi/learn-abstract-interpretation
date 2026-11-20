@@ -4,7 +4,8 @@ import { run, programPoints, pointKey } from './interp';
 import { collect } from './collecting';
 import { analyze } from './analyzer';
 import { checkSoundness } from './soundness';
-import { SignDomain as S, alphaSign, atoms, type Sign } from './domains/sign';
+import { SignDomain as S, alphaSign, cases, BASIC_SIGNS, SAMPLES, signOf, possibleSigns, canBeTrue, type Sign } from './domains/sign';
+import type { BinOp, CmpOp } from './ast';
 import { EXAMPLES } from './examples';
 
 const SIGNS: Sign[] = ['bot', 'neg', 'zero', 'pos', 'top'];
@@ -89,7 +90,7 @@ describe('sign domain', () => {
     expect(S.refine('<=', 'top', 'zero')).toEqual(['top', 'zero']); // {neg, zero} rounds up to ⊤
     expect(S.refine('==', 'top', 'zero')).toEqual(['zero', 'zero']);
     expect(S.refine('<', 'pos', 'zero')[0]).toBe('bot');
-    expect(atoms(S.refine('!=', 'zero', 'zero')[0])).toEqual([]);
+    expect(cases(S.refine('!=', 'zero', 'zero')[0])).toEqual([]);
   });
 });
 
@@ -124,6 +125,32 @@ describe('sign analysis', () => {
       const c = collect(p, { range: 3, maxRuns: 400, fuel: 500 });
       const a = analyze(p, S);
       expect(checkSoundness(c, a, S), ex.id).toEqual([]);
+    }
+  });
+});
+
+describe('case-by-case sign rules', () => {
+  // The calculator shows sample computations as evidence; check that the samples
+  // produce exactly the signs the rules claim, no more and no less.
+  const OPS: BinOp[] = ['+', '-', '*', '/'];
+  const CMPS: CmpOp[] = ['<', '<=', '>', '>=', '==', '!='];
+  const apply = (op: BinOp, x: number, y: number) =>
+    op === '+' ? x + y : op === '-' ? x - y : op === '*' ? x * y : Math.trunc(x / y);
+  const holds = (op: CmpOp, x: number, y: number) =>
+    op === '<' ? x < y : op === '<=' ? x <= y : op === '>' ? x > y : op === '>=' ? x >= y : op === '==' ? x === y : x !== y;
+
+  it('possibleSigns matches what the samples produce', () => {
+    for (const op of OPS) for (const a of BASIC_SIGNS) for (const b of BASIC_SIGNS) {
+      const seen = new Set<string>();
+      for (const x of SAMPLES[a]) for (const y of SAMPLES[b]) if (!(op === '/' && y === 0)) seen.add(signOf(apply(op, x, y)));
+      expect(new Set(possibleSigns(op, a, b)), `${a} ${op} ${b}`).toEqual(seen);
+    }
+  });
+
+  it('canBeTrue matches what the samples show', () => {
+    for (const op of CMPS) for (const a of BASIC_SIGNS) for (const b of BASIC_SIGNS) {
+      const some = SAMPLES[a].some((x) => SAMPLES[b].some((y) => holds(op, x, y)));
+      expect(canBeTrue(op, a, b), `${a} ${op} ${b}`).toBe(some);
     }
   });
 });

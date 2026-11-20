@@ -7,31 +7,37 @@ import Exercise from '../../components/Exercise.astro';
 import Deeper from '../../components/Deeper.astro';
 import Playground from '../../components/Playground.astro';
 import GaloisExplorer from '../../components/GaloisExplorer.astro';
+import CaseSplit from '../../components/CaseSplit.astro';
 
 Chapter 3 ended with false alarms whose cause was the *shape* of the domain: the property we needed, $y \ge 0$, had no name among our five signs. In this chapter we fix that with a better domain. That fix raises a general question: what makes a set of abstract values, together with α and γ, a *correct* abstraction? The answer is a Galois connection, the idea Cousot's theory is built on.
 
 ## A better sign domain
 
-The five-element domain had to round "$0$ or $+$" up to $\top$. So let's stop rounding: allow **every** set of atoms as an abstract value. Three new elements appear:
+The five-element domain had to round "zero or positive" up to $\top$. Remember the recipe from chapter 3: **split** into basic signs, **work out** each combination, **summarize**. All the rounding happens in step 3: the domain only has names for zero, one or all three basic signs.
 
-| New value | Atoms | Meaning |
+So let's give a name to **every** collection of basic signs. Three new values appear:
+
+| New value | Basic signs it covers | Meaning |
 | --- | --- | --- |
-| $\ge 0$ | $0, +$ | zero or positive |
-| $\le 0$ | $-, 0$ | negative or zero |
-| $\ne 0$ | $-, +$ | anything but zero |
+| $\ge 0$ | zero, positive | zero or positive |
+| $\le 0$ | negative, zero | negative or zero |
+| $\ne 0$ | negative, positive | anything but zero |
 
-Since an abstract value is now *exactly* a set of three atoms, the implementation is a 3-bit mask, and the lattice operations are bitwise:
+Now an abstract value simply *is* a set of basic signs: $+$ is the set holding just *positive*, $\ge 0$ holds *zero* and *positive*, $\top$ holds all three. The lattice operations become set operations, and step 3 never rounds:
 
 ```ts
-type Sign8 = number;                      // bit 1 = neg, bit 2 = zero, bit 4 = pos
-
-leq:  (a, b) => (a & ~b) === 0,           // ⊑ is "subset of"
-join: (a, b) => a | b,                    // ⊔ is union
-meet: (a, b) => a & b,                    // ⊓ is intersection
-fromAtoms: (as) => as.reduce((v, a) => v | BIT[a], 0),   // α on atoms: no rounding!
+// An abstract value is a set of basic signs.
+leq(a, b)      // a ⊑ b  is  "a is a subset of b"
+join(a, b)     // a ⊔ b  is  the union
+meet(a, b)     // a ⊓ b  is  the intersection
+summarize(s)   // the set itself: no rounding!
 ```
 
-Everything else is unchanged: arithmetic and tests reuse the same atom tables as chapter 3 (`atomOp`, `cmpPossible`). The *only* difference between the two domains is α, the function that turns a set of atoms into an abstract value. In the 5-element domain it rounds two-atom sets up to $\top$; here it keeps them.
+Steps 1 and 2 of the recipe are unchanged: the same `possibleSigns` and `canBeTrue` from chapter 3 do the case-by-case work. The *only* difference between the two domains is `summarize`, which is α on basic signs. (In `src/lib/domains/signs8.ts` the set is stored as a 3-bit mask, so union is `|` and intersection is `&`. That is an implementation detail.)
+
+Switch the calculator between 5 and 8 signs on $(+) \div (+)$: the case table is identical, only the summary changes, from $\top$ to $\ge 0$.
+
+<CaseSplit a="pos" op="/" b="pos" switchable={true} />
 
 Here is the same analyzer with either domain. Switch the **Domain** picker on *Countdown* and *Absolute value*:
 
@@ -92,7 +98,7 @@ This one equivalence has a surprising number of consequences, and each one is so
 
 </Insight>
 
-Consequence 3 is worth a pause. In chapter 3 we wrote α for signs by hand, as a function on sets of atoms. Here `alphaOf` is one generic function that works for *any* domain given only `join` and `fromConst`. The playground's "Compare with testing" table and the explorer above both use it. A theorem turned into a reusable helper.
+Consequence 3 is worth a pause. In chapter 3 we wrote α for signs by hand, as `summarize` on basic signs. Here `alphaOf` is one generic function that works for *any* domain given only `join` and `fromConst`. The playground's "Compare with testing" table and the explorer above both use it. A theorem turned into a reusable helper.
 
 ## When there is no best description
 
@@ -155,11 +161,11 @@ Adding *Neg* keeps a Galois connection: $\gamma(\textit{Neg}) \cap \gamma(\texti
 
 <Exercise n={2} title="sound but not best">
 
-A lazy implementer writes multiplication for extended signs like this: if either operand is $0$, return $0$; if both are atoms ($-$, $0$ or $+$), multiply the atoms; otherwise return $\top$. Is it sound? Is it the best operator? Write a Tiny program that the real operator proves and the lazy one does not.
+A lazy implementer writes multiplication for extended signs like this: if either operand is $0$, return $0$; if both are basic signs ($-$, $0$ or $+$), use the rule of signs; otherwise return $\top$. Is it sound? Is it the best operator? Write a Tiny program that the real operator proves and the lazy one does not.
 
 <Fragment slot="solution">
 
-It is **sound**: whenever it does not return the exact atom product, it returns $\top$, which covers everything. It is **not best**: $({\ge 0}) \times ({\ge 0})$ returns $\top$, while $\alpha \circ \times \circ \gamma$ gives $\ge 0$ (products of non-negatives are non-negative). Consequence 5 in action: $\ge 0 \sqsubseteq \top$.
+It is **sound**: whenever it does not apply the rule of signs exactly, it returns $\top$, which covers everything. It is **not best**: $({\ge 0}) \times ({\ge 0})$ returns $\top$, while $\alpha \circ \times \circ \gamma$ gives $\ge 0$ (products of non-negatives are non-negative). Consequence 5 in action: $\ge 0 \sqsubseteq \top$.
 
 ```
 x = input();
@@ -185,29 +191,38 @@ $\gamma(\textit{Even}) = 2\mathbb{Z}$, $\gamma(\textit{Odd}) = 2\mathbb{Z} + 1$;
 In *Countdown*, `y` starts at $0$ (*Even*) and the loop adds $2$ (*Even*), so `y` stays *Even* everywhere. But parity says nothing about sign, so `y >= 0` cannot be proved. The two domains know complementary facts; a **product** of signs and parity would know "$y$ is even and $\ge 0$".
 
 ```ts
-type Parity = 'bot' | 'even' | 'odd' | 'top';
-const atomsP = (v: Parity) => v === 'bot' ? [] : v === 'top' ? [0, 1] : v === 'even' ? [0] : [1];
-const fromAtomsP = (as: number[]): Parity =>
-  as.length === 0 ? 'bot' : new Set(as).size === 2 ? 'top' : as[0] === 0 ? 'even' : 'odd';
+// The same recipe as signs, with two basic cases instead of three.
+type BasicParity = 'even' | 'odd';
+type Parity = 'bot' | BasicParity | 'top';
+
+const cases = (v: Parity): BasicParity[] => (v === 'bot' ? [] : v === 'top' ? ['even', 'odd'] : [v]);
+const summarize = (ps: BasicParity[]): Parity => {
+  const distinct = new Set(ps);
+  return distinct.size === 0 ? 'bot' : distinct.size === 2 ? 'top' : ps[0];
+};
+const parityOf = (n: number): BasicParity => (n % 2 === 0 ? 'even' : 'odd');
+
+// One combination: which parities can x op y have?
+function possibleParities(op: BinOp, a: BasicParity, b: BasicParity): BasicParity[] {
+  if (op === '+' || op === '-') return [a === b ? 'even' : 'odd'];
+  if (op === '*') return [a === 'even' || b === 'even' ? 'even' : 'odd'];
+  return ['even', 'odd'];                        // division: 6 / 2 = 3, 4 / 2 = 2
+}
 
 export const ParityDomain: ValueDomain<Parity> = {
   name: 'Parity', bottom: 'bot', top: 'top',
   leq: (a, b) => a === b || a === 'bot' || b === 'top',
   join: (a, b) => (a === b ? a : a === 'bot' ? b : b === 'bot' ? a : 'top'),
   meet: (a, b) => (a === b ? a : a === 'top' ? b : b === 'top' ? a : 'bot'),
-  fromConst: (n) => (Math.abs(n) % 2 === 0 ? 'even' : 'odd'),
-  contains: (v, n) => atomsP(v).includes(Math.abs(n) % 2),
+  fromConst: (n) => parityOf(n),
+  contains: (v, n) => cases(v).includes(parityOf(n)),
   binop(op, a, b) {
-    const out: number[] = [];
-    for (const x of atomsP(a)) for (const y of atomsP(b)) {
-      if (op === '+' || op === '-') out.push((x + y) % 2);
-      else if (op === '*') out.push(x * y);
-      else out.push(0, 1);                       // division: anything
-    }
-    return fromAtomsP(out);
+    const results: BasicParity[] = [];
+    for (const x of cases(a)) for (const y of cases(b)) results.push(...possibleParities(op, x, y));
+    return summarize(results);
   },
   neg: (a) => a,
-  refine: (op, a, b) => op === '==' ? [ParityDomain.meet(a, b), ParityDomain.meet(a, b)] : [a, b],
+  refine: (op, a, b) => (op === '==' ? [ParityDomain.meet(a, b), ParityDomain.meet(a, b)] : [a, b]),
   show: (v) => ({ bot: '⊥', even: 'E', odd: 'O', top: '⊤' })[v],
 };
 ```

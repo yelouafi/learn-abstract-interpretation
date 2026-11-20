@@ -8,6 +8,7 @@ import Deeper from '../../components/Deeper.astro';
 import Playground from '../../components/Playground.astro';
 import SignLattice from '../../components/SignLattice.astro';
 import SignTables from '../../components/SignTables.astro';
+import CaseSplit from '../../components/CaseSplit.astro';
 
 At the end of chapter 2 we had one set of integers per variable, but those sets can be infinite. In this chapter we summarize each set by a single **sign**, rebuild arithmetic, tests and control flow on signs, and get a working analyzer. Every idea in later chapters is a refinement of what we do here.
 
@@ -64,77 +65,130 @@ In words: “$a$ is a correct description of $S$” means the same thing on both
 
 ## Abstract arithmetic
 
-To analyze `y = x * 2` we need to multiply signs. The rule for every operator is the same: an abstract operator must cover every concrete result.
+To analyze `y = x * 2` we need to multiply *signs*. Start with what you already know from school, and answer each question for **any** numbers with those signs:
 
-> If $x \in \gamma(a)$ and $y \in \gamma(b)$, then $x \text{ op } y \in \gamma(a \text{ op}^\sharp b)$.
+- positive × positive? Always **positive**.
+- negative × positive? Always **negative**.
+- zero × anything? Always **zero**.
+- positive + positive? Always **positive**.
+- positive + negative? **It depends**: $5 + (-3) = 2$, $3 + (-3) = 0$, $3 + (-5) = -2$. Any sign is possible, so the only safe answer is $\top$.
 
-The most precise such operator is: concretize, compute on all values, abstract again: $a \text{ op}^\sharp b = \alpha(\{x \text{ op } y \mid x \in \gamma(a), y \in \gamma(b)\})$. We can't run that literally (the sets are infinite), but for signs we can do it by hand on the three "atoms" $-$, $0$, $+$, which partition the integers:
-
-```ts
-function atomPlus(a: Atom, b: Atom): Atom[] {
-  if (a === 'zero') return [b];
-  if (b === 'zero') return [a];
-  if (a === b) return [a];
-  return ['neg', 'zero', 'pos']; // 5 + (-3) = 2, 3 + (-3) = 0, 3 + (-5) = -2
-}
-
-// The abstract operator: try every pair of atoms, collect the results, abstract.
-binop(op, a, b) {
-  const out: Atom[] = [];
-  for (const x of atoms(a)) for (const y of atoms(b)) out.push(...atomOp(op, x, y));
-  return fromAtoms(out); // α: 0 atoms → ⊥, 1 atom → itself, more → ⊤
-}
-```
-
-Here are the tables this code produces. They are generated from the real implementation when the site is built:
+That is all abstract arithmetic is. Here is every answer, for the four operators. The tables are generated from the real implementation when the site is built:
 
 <SignTables ops={['+', '-', '*', '/']} />
 
 Some entries to read carefully:
 
-- $(+) + (-) = \top$: the sign of a sum of a positive and a negative depends on their magnitudes, which we threw away.
+- $(+) + (-) = \top$: the sign of the sum depends on the sizes of the numbers, which we threw away.
 - $\top \times 0 = 0$: anything times zero is zero, so even total ignorance gives a precise answer.
-- $(+) \div (+) = \top$: integer division truncates, and $1 \div 2 = 0$. The true answer is “$0$ or $+$”, which this domain can only express as $\top$.
+- $(+) \div (+) = \top$: division truncates, so $1 \div 2 = 0$ but $5 \div 2 = 2$. The true answer is "zero or positive", and this domain has no value meaning exactly that, so it must say $\top$.
 - $x \div 0 = \bot$: there is no result, because the program crashes. The analyzer reports an alarm whenever the divisor *may* be zero.
 - $\bot$ in, $\bot$ out: no values in, no values out.
 
+### One recipe for every entry: split into cases
+
+The tables are not written out one by one. They all come from one recipe that you have probably used without naming it. Every integer is **negative, zero or positive**. Call these three the **basic signs**. Each abstract value covers some of them: $+$ covers just *positive*, $\top$ covers all three, $\bot$ covers none.
+
+To compute `a op b`:
+
+1. **Split** each side into the basic signs it covers.
+2. **Work out each combination**: for a negative and a positive, which signs can the result have? These are the school facts from the list above.
+3. **Summarize** all the signs you collected as one abstract value: none gives $\bot$, one gives that sign, two or three give $\top$.
+
+Worked example, $\top + (+)$:
+
+| | b positive |
+| --- | --- |
+| **a negative** | $-$, $0$ or $+$ (e.g. $-3 + 5 = 2$, $-3 + 3 = 0$, $-5 + 3 = -2$) |
+| **a zero** | $+$ (e.g. $0 + 2 = 2$) |
+| **a positive** | $+$ (e.g. $2 + 3 = 5$) |
+
+The collected signs are $\{-, 0, +\}$, which summarizes as $\top$. Try other combinations in the calculator below: it runs exactly this recipe, with real example computations in every cell. Note the case $(+) \div (+)$: the collected signs are $\{0, +\}$, and step 3 has to **round them up** to $\top$. That rounding is where this domain loses precision, and chapter 4 removes it.
+
+<CaseSplit a="top" op="+" b="pos" />
+
+In code, the recipe is three small functions. This snippet is complete; the real file, `src/lib/domains/sign.ts`, has the same structure with all four operators:
+
+```ts
+type BasicSign = 'neg' | 'zero' | 'pos';
+type Sign = 'bot' | BasicSign | 'top';
+
+// 1. Split: which basic signs does an abstract value cover?
+function cases(s: Sign): BasicSign[] {
+  return s === 'bot' ? [] : s === 'top' ? ['neg', 'zero', 'pos'] : [s];
+}
+
+// 2. One combination: which signs can x + y have, if x has sign a and y has sign b?
+function plusSigns(a: BasicSign, b: BasicSign): BasicSign[] {
+  if (a === 'zero') return [b];               // 0 + y has the sign of y
+  if (b === 'zero') return [a];
+  if (a === b) return [a];                    // same signs: the sign stays
+  return ['neg', 'zero', 'pos'];              // opposite signs: it depends on the sizes
+}
+
+// 3. Summarize the collected signs as one abstract value.
+function summarize(signs: BasicSign[]): Sign {
+  const distinct = new Set(signs);
+  if (distinct.size === 0) return 'bot';
+  if (distinct.size === 1) return signs[0];
+  return 'top';                               // two or three signs: only ⊤ covers them
+}
+
+function plus(a: Sign, b: Sign): Sign {
+  const results: BasicSign[] = [];
+  for (const x of cases(a)) for (const y of cases(b)) results.push(...plusSigns(x, y));
+  return summarize(results);
+}
+```
+
 <Insight title="soundness of an abstract operator">
 
-For a concrete operation $f$, an abstract version $f^\sharp$ is **sound** when
+An abstract operator must never miss a concrete result:
+
+> If $x \in \gamma(a)$ and $y \in \gamma(b)$, then $x \text{ op } y \in \gamma(a \text{ op}^\sharp b)$.
+
+The result may contain extra values (imprecision), but must not miss one (that would be a bug). The **best** such operator is
 
 $$
-f(\gamma(a)) \subseteq \gamma(f^\sharp(a))
+a \text{ op}^\sharp b = \alpha(\{\, x \text{ op } y \mid x \in \gamma(a),\ y \in \gamma(b) \,\})
+\qquad\text{in short}\qquad f^\sharp = \alpha \circ f \circ \gamma
 $$
 
-The abstract result may contain extra values (imprecision) but must not miss one (that would be a bug). The **best** abstract operator is
-
-$$
-f^\sharp = \alpha \circ f \circ \gamma
-$$
-
-Read right to left: go to sets, compute exactly, come back to the most precise abstract value. Our atom-by-atom code computes exactly this for signs. For richer domains we often settle for something sound but less than best, because the best operator is too expensive or not computable.
+Read right to left: go to sets, compute exactly, come back to the most precise abstract value. Splitting into cases is how we compute this for signs without enumerating infinite sets: γ is "split", the case table is "compute exactly, case by case", and α is "summarize". For richer domains we often settle for something sound but less than best, because the best operator is too expensive or not computable.
 
 </Insight>
 
 ## Tests become filters
 
-In chapter 2, a test like `x > 0` *filtered* the set of states. On signs it does the same, keeping only the atoms that can make the comparison true:
+In chapter 2, a test like `x > 0` *filtered* the set of states. On signs it does the same, with the same recipe: split both sides into cases, and **keep only the cases in which the test can be true**.
+
+Worked example, `x > 0` with `x` unknown ($\top$). The right side, `0`, covers only *zero*:
+
+- Can a negative number be $> 0$? No. Drop *negative*.
+- Can zero be $> 0$? No. Drop *zero*.
+- Can a positive number be $> 0$? Yes. Keep *positive*.
+
+So inside `if (x > 0) { … }`, `x` is $+$. Switch the calculator below to other tests:
+
+- `x <= 0` keeps *negative* and *zero*, which summarizes as $\top$. On the `else` branch we learn nothing: the same "non-negative" gap as in the division table.
+- `x == 0` keeps only *zero*.
+- With `x` known to be $+$, the test `x < 0` keeps **no** case. The branch can never run: it is **unreachable** ($\bot$).
+
+<CaseSplit a="top" op=">" b="zero" />
+
+The code is the same loop, with a yes/no question instead of the arithmetic table:
 
 ```ts
 refine(op, a, b) {
-  const ka: Atom[] = [], kb: Atom[] = [];
-  for (const x of atoms(a)) for (const y of atoms(b)) {
-    if (cmpPossible(op, x, y)) { ka.push(x); kb.push(y); }   // e.g. pos > zero is possible
+  const keepA: BasicSign[] = [], keepB: BasicSign[] = [];
+  for (const x of cases(a)) for (const y of cases(b)) {
+    if (canBeTrue(op, x, y)) { keepA.push(x); keepB.push(y); }  // e.g. canBeTrue('>', 'pos', 'zero')
   }
-  return [fromAtoms(ka), fromAtoms(kb)];
+  return [summarize(keepA), summarize(keepB)];
 }
 ```
 
-With `x` unknown ($\top$):
-
-- `x > 0` keeps only $+$, so inside `if (x > 0) { … }`, `x` is $+$. Precise.
-- `x <= 0` keeps $-$ and $0$, which rounds back up to $\top$. On the `else` branch we learn nothing: the same "non-negative / non-positive" gap as before.
-- `x == 0` keeps only $0$; `x < 0` on a value known to be $+$ keeps nothing, so the branch is **unreachable** ($\bot$).
+`canBeTrue` answers questions like "can some positive be greater than zero?". The file decides them by comparing the smallest and largest number of each basic sign: `x < y` is possible exactly when the smallest `x` is below the largest `y`.
 
 Refinement only flows back into a variable when it appears bare in the comparison. For `x + 1 > 0` we learn something about the *value* of `x + 1` but don't push it back to `x`. Doing that ("backward abstract arithmetic") is a nice extension for later.
 
@@ -222,7 +276,7 @@ Line 1: `a` = $\top$. Inside the `then` branch, `a < 0` refines `a` to $-$; `b` 
 
 <Exercise n={2} title="spot the unsound table">
 
-A colleague writes `atomPlus('pos', 'neg') = ['pos']` ("the bigger one usually wins"). Write a Tiny program on which the resulting analyzer proves an assertion that actually fails.
+A colleague changes one case in `plusSigns`: positive + negative now returns only *positive* ("the bigger one usually wins"). Write a Tiny program on which the resulting analyzer proves an assertion that actually fails.
 
 <Fragment slot="solution">
 
@@ -244,13 +298,13 @@ Fix false-alarm cause 1 by adding three elements: $\ge 0$ ("non-negative"), $\le
 
 <Fragment slot="solution">
 
-The elements are $\bot$; the atoms $-$, $0$, $+$; the pairs $\le 0 = \{-, 0\}$, $\ne 0 = \{-, +\}$, $\ge 0 = \{0, +\}$; and $\top$. Each pair sits above its two atoms and below $\top$, so the diagram looks like a cube's projection (it is the lattice of all subsets of the 3 atoms).
+The elements are $\bot$; the three basic signs $-$, $0$, $+$; the pairs $\le 0$ (negative or zero), $\ne 0$ (negative or positive), $\ge 0$ (zero or positive); and $\top$. Each pair sits above its two basic signs and below $\top$, so the diagram looks like a cube's projection: it is the lattice of all subsets of the three basic signs.
 
 $+ \sqcup 0 = {\ge 0}$, and $(+) \div (+) = {\ge 0}$ as well. In *Countdown*, the loop head has $y = 0 \sqcup + = {\ge 0}$, then $({\ge 0}) + (+) = +$, and the join is again $\ge 0$: stable, and `y >= 0` is proved. In *Absolute value*, the `else` branch refines `x` to $\ge 0$, and both branches give `y` $\ge 0$ or better.
 
 *Copy then subtract* and *Squares* still fail: their problem is relational (cause 2), and no per-variable domain fixes it.
 
-In code, this domain is easier than the 5-element one: an abstract value is exactly a **set of atoms**, so `fromAtoms` never has to round. It is the same `binop` with a different α. Chapter 4 implements exactly this domain and puts it next to the 5-element one.
+In code, this domain is *easier* than the 5-element one: an abstract value is exactly a **set of basic signs**, so `summarize` never has to round. Steps 1 and 2 of the recipe are unchanged; only step 3 differs. Chapter 4 implements exactly this domain and puts it next to the 5-element one.
 
 </Fragment>
 </Exercise>

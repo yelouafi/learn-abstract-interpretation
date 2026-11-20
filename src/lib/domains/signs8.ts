@@ -1,4 +1,4 @@
-// Extended signs: every set of atoms is an abstract value.
+// Extended signs: every collection of basic signs is an abstract value.
 //
 //              ⊤
 //          /   |   \
@@ -10,26 +10,30 @@
 //          \   |   /
 //              ⊥
 //
-// An abstract value is a 3-bit mask over the atoms (neg = 1, zero = 2, pos = 4), so the
-// lattice is exactly the powerset of {−, 0, +}: join is bitwise OR, meet is bitwise AND,
-// and ⊑ is "is a subset of". Compared with the 5-element domain nothing else changes:
-// the operators on atoms are the same, but α no longer has to round two-atom sets up to ⊤.
+// Think of an abstract value as a SET of basic signs: ≥0 is {zero, pos}, ≠0 is {neg, pos}.
+// Then ⊑ is "subset of", join is union and meet is intersection. Compared with the
+// 5-element domain nothing else changes: the case-by-case operators are the same, but
+// summarize() no longer rounds a two-sign collection up to ⊤. It keeps it as is.
+//
+// Implementation detail: the set is stored as a 3-bit mask (neg = 1, zero = 2, pos = 4),
+// so union is |, intersection is &, and "a ⊆ b" is (a & ~b) === 0.
 
 import type { ValueDomain } from '../domain';
-import { ATOMS, atomNeg, atomOp, cmpPossible, signOf, type Atom } from './sign';
+import { BASIC_SIGNS, negSign, possibleSigns, canBeTrue, signOf, type BasicSign } from './sign';
 
 export type Sign8 = number; // 0..7
 
-const BIT: Record<Atom, number> = { neg: 1, zero: 2, pos: 4 };
+const BIT: Record<BasicSign, number> = { neg: 1, zero: 2, pos: 4 };
 
-export function atoms8(v: Sign8): Atom[] {
-  return ATOMS.filter((a) => v & BIT[a]);
+/** The basic signs an abstract value covers. */
+export function cases8(v: Sign8): BasicSign[] {
+  return BASIC_SIGNS.filter((a) => v & BIT[a]);
 }
 
-/** α on sets of atoms: just the set itself, no rounding. */
-export function fromAtoms8(as: Iterable<Atom>): Sign8 {
+/** Summarize a collection of basic signs: just the set itself, no rounding. */
+export function summarize8(signs: Iterable<BasicSign>): Sign8 {
   let v = 0;
-  for (const a of as) v |= BIT[a];
+  for (const a of signs) v |= BIT[a];
   return v;
 }
 
@@ -48,18 +52,18 @@ export const Signs8Domain: ValueDomain<Sign8> = {
   contains: (v, n) => (v & BIT[signOf(n)]) !== 0,
 
   binop(op, a, b) {
-    const out: Atom[] = [];
-    for (const x of atoms8(a)) for (const y of atoms8(b)) out.push(...atomOp(op, x, y));
-    return fromAtoms8(out);
+    const results: BasicSign[] = [];
+    for (const x of cases8(a)) for (const y of cases8(b)) results.push(...possibleSigns(op, x, y));
+    return summarize8(results);
   },
-  neg: (a) => fromAtoms8(atoms8(a).map(atomNeg)),
+  neg: (a) => summarize8(cases8(a).map(negSign)),
 
   refine(op, a, b) {
-    const ka: Atom[] = [], kb: Atom[] = [];
-    for (const x of atoms8(a)) for (const y of atoms8(b)) {
-      if (cmpPossible(op, x, y)) { ka.push(x); kb.push(y); }
+    const keepA: BasicSign[] = [], keepB: BasicSign[] = [];
+    for (const x of cases8(a)) for (const y of cases8(b)) {
+      if (canBeTrue(op, x, y)) { keepA.push(x); keepB.push(y); }
     }
-    return [fromAtoms8(ka), fromAtoms8(kb)];
+    return [summarize8(keepA), summarize8(keepB)];
   },
 
   show: (v) => NAMES[v],
