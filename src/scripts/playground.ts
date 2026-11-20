@@ -75,7 +75,8 @@ class Playground extends HTMLElement {
     const tabs = h('div', { class: 'tabs', role: 'tablist' });
     if (this.modes.length > 1) {
       for (const m of this.modes) {
-        const b = h('button', { type: 'button', role: 'tab', 'data-mode': m }, MODE_LABEL[m]);
+        const label = m === 'signs' && this.domains.some((d) => d.id === 'intervals') ? '⊑ Abstract analysis' : MODE_LABEL[m];
+        const b = h('button', { type: 'button', role: 'tab', 'data-mode': m }, label);
         b.addEventListener('click', () => { this.mode = m; this.refresh(); });
         tabs.append(b);
       }
@@ -243,7 +244,11 @@ class Playground extends HTMLElement {
       for (const [id, hist] of loops) {
         const line = pts.find((q) => q.key === `head:${id}`)?.line;
         det.append(h('p', { class: 'hint' }, `Loop on line ${line}: ${hist.length} iteration${hist.length > 1 ? 's' : ''} until stable`),
-          h('ol', { class: 'iters' }, ...hist.map((e) => h('li', {}, showAEnv(D, e)))));
+          h('ol', { class: 'iters' }, ...hist.map((e, i) => {
+            const kind = a.iterationKinds.get(id)?.[i];
+            const tag = kind === 'widen' ? '∇ widen  ' : kind === 'narrow' ? 'Δ narrow  ' : '';
+            return h('li', {}, tag + showAEnv(D, e));
+          })));
       }
       this.panel.append(det);
     }

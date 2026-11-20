@@ -2,14 +2,16 @@
 interface Props {
   example?: string;
   examples?: string;
-  domain?: 'concrete' | 'signs' | 'signs8';
+  domain?: 'concrete' | 'signs' | 'signs8' | 'intervals';
   strategy?: 'jacobi' | 'in-order';
+  widen?: 'off' | '1' | '3';
+  narrow?: 'on' | 'off';
   caption?: string;
 }
-const { example, examples, domain, strategy, caption } = Astro.props;
+const { example, examples, domain, strategy, widen, narrow, caption } = Astro.props;
 ---
 <figure class="pg-figure wide">
-  <ai-fixpoint data-example={example} data-examples={examples} data-domain={domain} data-strategy={strategy}>
+  <ai-fixpoint data-example={example} data-examples={examples} data-domain={domain} data-strategy={strategy} data-widen={widen} data-narrow={narrow}>
     <noscript>This widget needs JavaScript.</noscript>
   </ai-fixpoint>
   {caption && <figcaption>{caption}</figcaption>}
@@ -52,4 +54,8 @@ const { example, examples, domain, strategy, caption } = Astro.props;
   ai-fixpoint td.cur { color: var(--text); }
   ai-fixpoint th.cur { color: var(--accent); }
   ai-fixpoint td.changed { background: var(--accent-soft); color: var(--accent); }
+  ai-fixpoint td.widened { background: var(--warn-soft); color: var(--warn); }
+  ai-fixpoint td.narrowed { background: var(--ok-soft); color: var(--ok); }
+  ai-fixpoint .toolbar.sub { background: var(--surface); padding-top: 0.4rem; padding-bottom: 0.4rem; }
+  ai-fixpoint .toolbar[hidden] { display: none; }
 </style>

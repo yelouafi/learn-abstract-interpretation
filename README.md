@@ -13,7 +13,7 @@ analyzer for a tiny language one idea at a time, with interactive playgrounds an
 | 3 | Signs: your first abstract domain | ✅ |
 | 4 | Galois connections | ✅ |
 | 5 | Loops are fixpoints | ✅ |
-| 6 | Intervals, widening and narrowing | planned |
+| 6 | Intervals, widening and narrowing | ✅ |
 | 7 | Building a real analyzer (CFG, worklist) | planned |
 | 8 | Relational domains | planned |
 | 9 | Beyond numbers | planned |
@@ -40,6 +40,7 @@ src/lib/            the analyzer, framework-free TypeScript with tests
   domain.ts         ValueDomain interface (lattice + abstract operators)
   domains/sign.ts   the 5-element sign domain
   domains/signs8.ts the 8-element extended sign domain
+  domains/interval.ts intervals, with widening and narrowing
   domains/index.ts  domain registry, generic α
   states.ts         state lattices: concrete sets of states, abstract environments
   analyzer.ts       generic abstract interpreter (if → join, while → fixpoint)
