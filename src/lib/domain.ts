@@ -20,8 +20,16 @@ export interface ValueDomain<V> {
   join(a: V, b: V): V;
   /** a ⊓ b: the most precise value covering what both agree on (used to refine). */
   meet(a: V, b: V): V;
-  /** Optional widening, for domains with infinite ascending chains. */
+  /**
+   * Widening a ∇ b, for domains with infinite ascending chains (chapter 6).
+   * Must be an upper bound of a and b, and must make every increasing sequence stop.
+   */
   widen?(a: V, b: V): V;
+  /**
+   * Narrowing a Δ b, used after widening to win back precision (chapter 6).
+   * Called with b ⊑ a; must return something between b and a, and must stop.
+   */
+  narrow?(a: V, b: V): V;
 
   /** α({n}): abstraction of a single integer. */
   fromConst(n: number): V;

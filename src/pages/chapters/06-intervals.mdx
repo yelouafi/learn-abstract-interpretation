@@ -1,0 +1,219 @@
+---
+layout: ../../layouts/Chapter.astro
+slug: 06-intervals
+---
+import Insight from '../../components/Insight.astro';
+import Exercise from '../../components/Exercise.astro';
+import Deeper from '../../components/Deeper.astro';
+import Playground from '../../components/Playground.astro';
+import FixpointStepper from '../../components/FixpointStepper.astro';
+
+Signs can't count. After `x = 0; while (x < 10) { x = x + 1; }` the best they can say is "`x` is positive" (chapter 5, exercise 1), when the truth is "`x` is exactly 10". In this chapter we switch to **intervals**, which can count. That one change breaks the guarantee chapter 5 relied on: the iteration may never stop. The fix, **widening**, is one of the central ideas of abstract interpretation, and **narrowing** wins back what widening gives up.
+
+## Intervals
+
+Summarize a set of integers by its smallest and largest element:
+
+| Abstract value | Meaning |
+| --- | --- |
+| $[2, 7]$ | every integer from 2 to 7 |
+| $[0, +\infty]$ | every integer $\ge 0$ |
+| $[-\infty, -1]$ | every negative integer |
+| $5$ (short for $[5, 5]$) | exactly 5 |
+| $\top = [-\infty, +\infty]$ | any integer |
+| $\bot$ | no integer at all |
+
+In code, an interval is `{ lo, hi }` with `lo ≤ hi` (bounds may be `±Infinity`), or `null` for $\bot$. The lattice operations are what you would guess:
+
+- **order** is containment: $[1, 3] \sqsubseteq [0, 10]$;
+- **meet** is intersection: $[0, 10] \sqcap [5, +\infty] = [5, 10]$;
+- **join** is the smallest interval containing both, the *hull*: $[0, 0] \sqcup [10, 10] = [0, 10]$.
+
+That last example shows where intervals lose precision. The join knows that `x` is 0 *or* 10, but it must also include 1 to 9, because an interval has no holes. α is the hull too: $\alpha(\{0, 10\}) = [0, 10]$. Since intervals are closed under intersection, chapter 4's rule applies: there is a Galois connection, and every set of integers has a best interval.
+
+## Arithmetic on intervals
+
+The rule of thumb: compute with the endpoints.
+
+- **Addition:** $[a, b] + [c, d] = [a + c,\ b + d]$. For example $[0, 5] + 1 = [1, 6]$.
+- **Subtraction:** $[a, b] - [c, d] = [a - d,\ b - c]$. The smallest result uses the *largest* thing you subtract.
+- **Multiplication:** the result is between the smallest and largest of the four corner products $ac, ad, bc, bd$. For example $[-2, 3] \times [4, 5]$ has corners $-8, -10, 12, 15$, so it gives $[-10, 15]$.
+- **Division:** split the divisor into its negative part and its positive part (dividing by 0 has no result, and raises an alarm), divide by each part using the corners, and join. For example $[1, 10] \div [2, 3] = [0, 5]$.
+
+The case-by-case thinking of chapter 3 is still there, just with infinitely many cases summarized by two numbers. Tests work the same way as before. `x < 10` keeps the part of `x` below 10: on $\top$ it gives $[-\infty, 9]$. One limitation to remember is that `x != 10` can only trim an *endpoint*. On $[0, 10]$ it gives $[0, 9]$, but on $[0, 20]$ it can do nothing, because $[0, 9] \cup [11, 20]$ has a hole.
+
+<Insight title="the dependency problem">
+
+Interval arithmetic is the best possible operator *for each operation on its own*, but it treats every occurrence of a variable as independent. If $x \in [0, 10]$:
+
+$$
+x - x \;\leadsto\; [0, 10] - [0, 10] = [-10, 10]
+$$
+
+even though $x - x$ is always 0. It is the same non-relational blind spot as *Copy then subtract* in chapter 3. Intervals are more precise than signs, but they still can't express facts like $y = x$.
+
+</Insight>
+
+## The problem: infinite height
+
+Here is the counting loop with intervals, and **widening off**. Press **⏭** (last round), or play it:
+
+<FixpointStepper example="count" examples="count,forever,countdown,not-equal,sum" domain="intervals" strategy="in-order" widen="off" narrow="off" />
+
+It works, slowly. The loop head goes $0$, $[0, 1]$, $[0, 2]$, $[0, 3]$, …, one step per round, and the iteration stabilizes only after 101 rounds, with the exact answer: $x \in [0, 100]$ at the head and $x = 100$ after the loop. Switch the strategy to "All at once": 205 rounds. Counting to a million would take a million rounds. Now pick **Counting forever**: the head grows forever and the iteration never stops.
+
+Nothing is wrong with the equations. The problem is the lattice. Chapter 5's termination argument needed **finite height**, and intervals have infinite increasing chains:
+
+$$
+[0, 0] \sqsubset [0, 1] \sqsubset [0, 2] \sqsubset [0, 3] \sqsubset \cdots
+$$
+
+Kleene iteration only stops if the iterates stop changing, and on this chain they don't. We need a different way to reach a sound answer in finite time.
+
+## Widening: jump ahead
+
+The idea is simple, and a little brutal: **when a bound keeps moving, assume it moves forever.** At a loop head, instead of taking the new value $b$, take
+
+$$
+[a_1, a_2] \;\nabla\; [b_1, b_2] \;=\; \big[\; b_1 < a_1 \;?\; -\infty : a_1,\quad b_2 > a_2 \;?\; +\infty : a_2 \;\big]
+$$
+
+Read it bound by bound: if the lower bound went down, send it to $-\infty$; if the upper bound went up, send it to $+\infty$; bounds that didn't move stay. So $[0, 1] \nabla [0, 2] = [0, +\infty]$ and $[0, 5] \nabla [-1, 5] = [-\infty, 5]$.
+
+Widening is applied only at loop heads (every cycle in the program goes through one), and usually only after a few rounds (the *widening delay*), so that loops that converge quickly on their own keep their precise result.
+
+<FixpointStepper example="count" examples="count,forever,countdown,not-equal,sum" domain="intervals" strategy="in-order" widen="1" narrow="off" />
+
+With widening, the counting loop is done after 2 rounds (round headers marked ∇ are where widening jumped, highlighted in orange). *Counting forever* now terminates too, and the analysis proves that the code after the loop is unreachable: the head is $[0, +\infty]$, and `true` is never false. Look at the result for *Counting to 100*, though: $x \in [0, +\infty]$ at the head, so after the loop `x >= 100` only gives $[100, +\infty]$, and `assert(x == 100)` "may fail". We traded precision for termination.
+
+<Insight title="widening">
+
+A **widening** $\nabla$ is an operator with two properties:
+
+1. **It goes up:** $a \sqcup b \sqsubseteq a \nabla b$. Jumping higher than the join is always sound.
+2. **It forces stabilization:** for any sequence $b_1, b_2, \dots$, the sequence $x_0 = b_0$, $x_{k+1} = x_k \nabla b_{k+1}$ stops changing after finitely many steps.
+
+For intervals, (2) holds because each bound can jump to infinity at most once. Iterating with widening at loop heads therefore stops, at some $X$ with $F(X) \sqsubseteq X$: a **post-fixpoint**. Chapter 5 told us every post-fixpoint is a sound invariant, though it may be bigger than the least one. So widening is a controlled way to *overshoot*: it gives up the least fixpoint in exchange for termination, and never gives up soundness.
+
+</Insight>
+
+## Narrowing: come back down
+
+After widening, the head is $[0, +\infty]$: sound but too big. Chapter 5 gives us a free way to improve it. If $X$ is a post-fixpoint, so is $F(X)$, and $F(X) \sqsubseteq X$. So we can apply the equations **again, going down**, and every step stays sound.
+
+In the stepper above, switch **Narrowing: on**. One extra round (marked Δ, in green) runs the loop once more from $[0, +\infty]$:
+
+$$
+\text{head} = \underbrace{0}_{\text{entry}} \;\sqcup\; \big( ([0, +\infty] \sqcap [-\infty, 99]) + 1 \big) = 0 \sqcup [1, 100] = [0, 100]
+$$
+
+The test `x < 100` cuts the infinite bound, and the head comes back to $[0, 100]$. The exit becomes exactly $100$ and the assertion is proved, which is the precise answer, in 3 rounds instead of 101.
+
+Going down could also take forever in principle, so at loop heads we use a **narrowing** operator $\Delta$ that limits how far we may go:
+
+$$
+[a_1, a_2] \;\Delta\; [b_1, b_2] \;=\; \big[\; a_1 = -\infty \;?\; b_1 : a_1,\quad a_2 = +\infty \;?\; b_2 : a_2 \;\big]
+$$
+
+Only infinite bounds may be replaced by finite ones. Each bound can improve at most once, so the descent stops.
+
+<Insight title="narrowing">
+
+From a post-fixpoint $X$, the decreasing sequence $X \sqsupseteq F(X) \sqsupseteq F^2(X) \sqsupseteq \dots$ stays above the least fixpoint, so **every** step is sound. A **narrowing** $\Delta$ ($b \sqsubseteq a \Delta b \sqsubseteq a$, and it forces stabilization) lets us take a few of those steps and stop safely at any time.
+
+The full recipe, introduced by Cousot and Cousot in 1977: **go up with widening until stable, then come down with narrowing**. The result is a sound invariant, often (not always) as precise as the least fixpoint.
+
+</Insight>
+
+Narrowing doesn't always help. Try **Loop with !=** (`while (x != 10)`). Widening gives $[0, +\infty]$ at the head, and narrowing can't cut it, because `x != 10` can't remove 10 from the middle of an interval (no holes). Yet the exit is still exactly $10$: the exit filter `x == 10` intersects $[0, +\infty]$ with $10$. Imprecision at one point does not always spread.
+
+## Try it
+
+The playground now offers intervals in its **Domain** picker, with widening (delay 3) and narrowing on. Open **Loop iterations** to see where the analyzer widened (∇) and narrowed (Δ).
+
+<Playground modes="signs,collect" domains="intervals,signs8" example="count" examples="count,countdown,abs,product,sum,not-equal,division,copy,forever" />
+
+Things to notice:
+
+1. *Countdown*, *Absolute value* and *Product of positives* are proved, like with extended signs, and the annotations now say how big things are: `y: [0, +∞]`, `r: [1, +∞]`.
+2. *Division alarms*: line 4 is safe ($b \in [1, +\infty]$), line 6 is a real alarm. Same verdicts as signs, but now the reason is visible.
+3. *Sum of the first n numbers* proves `s >= 0`, and finds `i` in $[1, 1000]$ after the loop, but **not** `i == n`. Both `i` and `n` are in $[1, 1000]$, but the interval of each variable alone can't say they are equal. That is a relation between two variables, the job of chapter 8.
+4. *Copy then subtract* still fails, for the dependency problem above.
+
+## A few honest warnings
+
+Widening makes analysis practical, but it has quirks worth knowing:
+
+- **It is not monotone.** A more precise input can produce a *less* precise result, because the result depends on how the iterates happened to grow. Two programs that differ in an irrelevant way can get different answers.
+- **The delay matters.** Widening too early loses precision (it jumps before a loop that would have stabilized on its own), and too late wastes time. Real analyzers tune it, often per loop.
+- **Smarter widenings exist.** Instead of jumping straight to $\pm\infty$, *widening with thresholds* jumps to the next "interesting" constant, often taken from the program itself (exercise 4). Industrial analyzers combine several such tricks.
+
+## Exercises
+
+<Exercise n={1} title="interval arithmetic by hand">
+
+Compute $[-2, 3] \times [-1, 4]$, $\;[1, 10] - [1, 10]$, and $[-5, 5] \div [-1, 2]$. Does the last one raise an alarm?
+
+<Fragment slot="solution">
+
+**Multiplication:** the corners are $(-2)(-1) = 2$, $(-2)(4) = -8$, $3 \cdot (-1) = -3$, $3 \cdot 4 = 12$, giving $[-8, 12]$.
+
+**Subtraction:** $[1 - 10,\ 10 - 1] = [-9, 9]$. If both operands are the same variable, the real answer is 0. This is the dependency problem.
+
+**Division:** the divisor splits into $[-1, -1]$ and $[1, 2]$. Dividing by $[-1, -1]$ gives $[-5, 5]$. Dividing by $[1, 2]$ has corners $-5, -2, 5, 2$, giving $[-5, 5]$. The join is $[-5, 5]$. Yes, there is an alarm: the divisor $[-1, 2]$ contains 0.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={2} title="widening and narrowing by hand">
+
+For *Counting to 100*, compute the loop-head values when widening is applied as soon as the head has changed twice: $0$, $[0, 1]$, … Then do one narrowing step. What is the value after the loop at each stage?
+
+<Fragment slot="solution">
+
+The head goes $0$, then $0 \sqcup ((0 \sqcap [-\infty, 99]) + 1) = [0, 1]$, then $[0, 2]$. The next candidate, $[0, 3]$, is widened: $[0, 2] \nabla [0, 3] = [0, +\infty]$. One more pass gives $0 \sqcup ([0, 99] + 1) = [0, 100] \sqsubseteq [0, +\infty]$: stable. After the loop, $[0, +\infty] \sqcap [100, +\infty] = [100, +\infty]$.
+
+Narrowing: $[0, +\infty] \;\Delta\; [0, 100] = [0, 100]$. A second narrowing step gives $[0, 100]$ again, so it stops. After the loop, $[0, 100] \sqcap [100, +\infty] = 100$. The structural analyzer in the playground does exactly this; open "Loop iterations" to compare.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={3} title="where narrowing cannot help">
+
+In *Loop with !=*, why does the loop head stay $[0, +\infty]$ after narrowing, and why is the value after the loop still exact? Change the loop to `while (x < 10)` and compare.
+
+<Fragment slot="solution">
+
+The body runs on the head filtered by `x != 10`. On $[0, +\infty]$ the filter can only trim an endpoint equal to 10, and 10 isn't an endpoint, so it returns $[0, +\infty]$ unchanged. Then $+1$ gives $[1, +\infty]$, and the head is $0 \sqcup [1, +\infty] = [0, +\infty]$ again. Narrowing has nothing to work with.
+
+After the loop, the filter is `x == 10`, a meet: $[0, +\infty] \sqcap 10 = 10$. Exact.
+
+With `while (x < 10)`, the body filter cuts the infinite bound to 9, narrowing brings the head back to $[0, 10]$, and the exit is again 10. The difference is only visible at the loop head.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={4} title="widening with thresholds">
+
+Design a widening that, instead of jumping to $+\infty$, jumps to the next value in a fixed list of thresholds such as $\{0, 100, 1000\}$ (and to $+\infty$ above the largest). Why does it still terminate? What does it give on *Counting to 100* **without** narrowing? Where would you get the thresholds from in a real analyzer?
+
+<Fragment slot="solution">
+
+For the upper bound, $[a_1, a_2] \nabla_T [b_1, b_2]$ keeps $a_2$ if $b_2 \le a_2$, and otherwise takes the smallest threshold $t \ge b_2$, or $+\infty$ if there is none. Lower bounds work symmetrically. It terminates because each bound can only move up through a finite list of thresholds before reaching infinity.
+
+On *Counting to 100*, the head goes $0, [0, 1], [0, 2]$, then widens to $[0, 100]$ instead of $[0, +\infty]$. That is already stable ($0 \sqcup ([0, 99] + 1) = [0, 100]$), so the exit is exactly 100 and the assertion is proved without narrowing.
+
+Good thresholds are the constants that appear in the program's tests (here, 100), plus a few standard values such as type bounds. Analyzers like Astrée use this idea routinely.
+
+</Fragment>
+</Exercise>
+
+<Deeper>
+
+- **Cousot, *Principles of Abstract Interpretation***: the chapters on interval analysis and on widening and narrowing (convergence acceleration). The book also discusses why widening is needed even for some finite domains (when the height is just too large) and the non-monotonicity issues mentioned above.
+- **P. Cousot & R. Cousot, "Static determination of dynamic properties of programs" (1976)** introduced interval analysis, and **the 1977 POPL paper** (chapter 5's reading) defines widening and narrowing in general.
+- **Antoine Miné, *Tutorial on Static Inference of Numeric Invariants by Abstract Interpretation***: a careful, practical treatment of intervals, widening with thresholds, and their implementation. It is the best next step after this chapter, and covers the relational domains of chapter 8.
+- **Møller & Schwartzbach**: the chapter on widening and narrowing does interval analysis on their toy language, with the same up-then-down recipe.
+- **Rival & Yi**: their running example becomes intervals with widening; compare their loop iteration with `analyzer.ts`.
+
+</Deeper>

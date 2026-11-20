@@ -3,12 +3,14 @@
 import type { ValueDomain } from '../domain';
 import { SignDomain } from './sign';
 import { Signs8Domain } from './signs8';
+import { IntervalDomain } from './interval';
 
 export interface DomainEntry { id: string; label: string; domain: ValueDomain<any> }
 
 export const DOMAINS: DomainEntry[] = [
   { id: 'signs', label: 'Signs (5 elements)', domain: SignDomain },
   { id: 'signs8', label: 'Extended signs (8 elements)', domain: Signs8Domain },
+  { id: 'intervals', label: 'Intervals', domain: IntervalDomain },
 ];
 
 export function domainById(id: string): DomainEntry {

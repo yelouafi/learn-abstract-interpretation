@@ -29,8 +29,10 @@ export interface StateLattice<S> {
   isBottom(s: S): boolean;
   leq(a: S, b: S): boolean;
   join(a: S, b: S): S;
-  /** Optional widening (used from chapter 6 on). */
+  /** Optional widening (chapter 6). */
   widen?(a: S, b: S): S;
+  /** Optional narrowing (chapter 6). */
+  narrow?(a: S, b: S): S;
   /** x = e. Alarms raised while evaluating e are pushed to `report` if given. */
   assign(s: S, x: string, e: Expr, report?: Alarm[], stmtId?: number): S;
   /** Keep only the states in which the condition can be true. */
@@ -87,6 +89,10 @@ export function abstractStates<V>(D: ValueDomain<V>, vars: string[]): StateLatti
       if (!a) return b;
       if (!b) return a;
       return Object.fromEntries(vars.map((x) => [x, D.widen!(a[x], b[x])]));
+    }),
+    narrow: D.narrow && ((a, b) => {
+      if (!a || !b) return null;
+      return smash(Object.fromEntries(vars.map((x) => [x, D.narrow!(a[x], b[x])])));
     }),
     assign(s, x, e, report, stmtId) {
       if (!s) return null;

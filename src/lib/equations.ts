@@ -103,12 +103,29 @@ export function buildEquations<S>(p: Program, L: StateLattice<S>): Unknown<S>[] 
 
 export type Strategy = 'jacobi' | 'in-order';
 
+/** What a round of iteration was doing. */
+export type Phase = 'up' | 'down';
+
+export interface KleeneOptions {
+  /**
+   * Widen at loop heads once a head has changed this many times (null: never widen).
+   * Only used if the lattice has `widen`.
+   */
+  widenDelay?: number | null;
+  /** Number of decreasing (narrowing) rounds to run after the ascending phase stabilizes. */
+  narrowSteps?: number;
+}
+
 export interface KleeneResult<S> {
   /** iterates[k] is the solution after k rounds; iterates[0] is all ⊥. */
   iterates: Solution<S>[];
   /** changed[k] lists the unknowns whose value changed in round k (k ≥ 1). */
   changed: Set<string>[];
-  /** Did the iteration reach a fixpoint within maxRounds? */
+  /** phase[k]: was round k going up (Kleene, maybe with widening) or down (narrowing)? */
+  phase: Phase[];
+  /** widened[k]: loop heads where widening changed the value in round k. */
+  widened: Set<string>[];
+  /** Did the ascending phase reach a post-fixpoint within maxRounds? */
   stable: boolean;
 }
 
@@ -117,24 +134,61 @@ export interface KleeneResult<S> {
  *  - 'jacobi':   every equation reads the previous round's values: X^{k+1} = F(X^k).
  *  - 'in-order': equations are evaluated top to bottom, each one already seeing the
  *                values updated earlier in the same round (Gauss–Seidel). Same limit, fewer rounds.
+ *
+ * With widening, loop heads take X ∇ F(X) instead of F(X) once they have changed
+ * `widenDelay` times; the ascending phase then stops at a post-fixpoint. Narrowing rounds
+ * (X Δ F(X) at loop heads, plain F elsewhere) then come back down towards the least fixpoint.
  */
-export function kleene<S>(eqs: Unknown<S>[], L: StateLattice<S>, strategy: Strategy = 'jacobi', maxRounds = 50): KleeneResult<S> {
+export function kleene<S>(
+  eqs: Unknown<S>[], L: StateLattice<S>, strategy: Strategy = 'jacobi', maxRounds = 50, opts: KleeneOptions = {},
+): KleeneResult<S> {
+  const widenDelay = L.widen ? (opts.widenDelay ?? null) : null;
+  const narrowSteps = opts.narrowSteps ?? 0;
+  const same = (a: S, b: S) => L.leq(a, b) && L.leq(b, a);
   let X: Solution<S> = new Map(eqs.map((u) => [u.key, L.bottom]));
   const iterates = [X];
   const changed: Set<string>[] = [new Set()];
-  for (let k = 1; k <= maxRounds; k++) {
+  const phase: Phase[] = ['up'];
+  const widened: Set<string>[] = [new Set()];
+  const headChanges = new Map<string, number>();
+
+  const round = (down: boolean) => {
     const next: Solution<S> = new Map(X);
     const read = strategy === 'jacobi' ? X : next;
-    const ch = new Set<string>();
+    const ch = new Set<string>(), wd = new Set<string>();
     for (const u of eqs) {
-      const v = u.eval(read);
-      if (!L.leq(v, next.get(u.key)!) || !L.leq(next.get(u.key)!, v)) ch.add(u.key);
+      const old = next.get(u.key)!;
+      let v = u.eval(read);
+      if (u.kind === 'head') {
+        if (!down && widenDelay !== null && (headChanges.get(u.key) ?? 0) >= widenDelay && !same(v, old)) {
+          const w = L.widen!(old, L.join(old, v));
+          if (!same(w, L.join(old, v))) wd.add(u.key);
+          v = w;
+        } else if (down) {
+          v = L.narrow ? L.narrow(old, v) : v;
+        }
+      }
+      if (!same(v, old)) {
+        ch.add(u.key);
+        if (u.kind === 'head') headChanges.set(u.key, (headChanges.get(u.key) ?? 0) + 1);
+      }
       next.set(u.key, v);
     }
-    if (ch.size === 0) return { iterates, changed, stable: true };
-    X = next;
-    iterates.push(X);
-    changed.push(ch);
+    return { next, ch, wd };
+  };
+
+  let stable = false;
+  for (let k = 1; k <= maxRounds; k++) {
+    const { next, ch, wd } = round(false);
+    if (ch.size === 0) { stable = true; break; }
+    X = next; iterates.push(X); changed.push(ch); phase.push('up'); widened.push(wd);
   }
-  return { iterates, changed, stable: false };
+  if (stable) {
+    for (let k = 0; k < narrowSteps; k++) {
+      const { next, ch } = round(true);
+      if (ch.size === 0) break;
+      X = next; iterates.push(X); changed.push(ch); phase.push('down'); widened.push(new Set());
+    }
+  }
+  return { iterates, changed, phase, widened, stable };
 }

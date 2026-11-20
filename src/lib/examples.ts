@@ -87,6 +87,42 @@ if (x > 0) {
 `,
   },
   {
+    id: 'count',
+    title: 'Counting to 100',
+    code: `x = 0;
+while (x < 100) {
+  x = x + 1;
+}
+assert(x == 100);
+`,
+  },
+  {
+    id: 'sum',
+    title: 'Sum of the first n numbers',
+    code: `n = input();
+i = 0;
+s = 0;
+if (n > 0 && n <= 1000) {
+  while (i < n) {
+    i = i + 1;
+    s = s + i;
+  }
+  assert(i == n);
+  assert(s >= 0);
+}
+`,
+  },
+  {
+    id: 'not-equal',
+    title: 'Loop with !=',
+    code: `x = 0;
+while (x != 10) {
+  x = x + 1;
+}
+assert(x == 10);
+`,
+  },
+  {
     id: 'forever',
     title: 'Counting forever',
     code: `x = 0;
