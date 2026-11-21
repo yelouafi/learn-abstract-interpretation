@@ -8,12 +8,14 @@ import { checkSoundness } from './soundness';
 import { EXAMPLES, example } from './examples';
 import { SignDomain, type Sign } from './domains/sign';
 import { Signs8Domain } from './domains/signs8';
+import { ParityDomain } from './domains/parity';
 import { alphaOf } from './domains';
 
 interface Case<V> { name: string; D: ValueDomain<V>; elements: V[] }
 const CASES: Case<any>[] = [
   { name: 'signs', D: SignDomain, elements: ['bot', 'neg', 'zero', 'pos', 'top'] as Sign[] },
   { name: 'signs8', D: Signs8Domain, elements: [0, 1, 2, 3, 4, 5, 6, 7] },
+  { name: 'parity', D: ParityDomain, elements: ['bot', 'even', 'odd', 'top'] },
 ];
 
 const SAMPLES = [-9, -2, -1, 0, 1, 2, 9];

@@ -123,6 +123,22 @@ assert(x == 10);
 `,
   },
   {
+    id: 'nested',
+    title: 'Nested loops',
+    code: `i = 0;
+s = 0;
+while (i < 10) {
+  j = 0;
+  while (j < i) {
+    s = s + 1;
+    j = j + 1;
+  }
+  i = i + 1;
+}
+assert(s >= 0);
+`,
+  },
+  {
     id: 'forever',
     title: 'Counting forever',
     code: `x = 0;

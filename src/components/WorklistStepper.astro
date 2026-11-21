@@ -1,0 +1,67 @@
+---
+interface Props {
+  id?: string;
+  example?: string;
+  examples?: string;
+  domain?: 'signs8' | 'intervals' | 'parity';
+  order?: 'fifo' | 'rpo' | 'recursive';
+  caption?: string;
+}
+const { id, example, examples, domain, order, caption } = Astro.props;
+---
+<figure class="pg-figure wide">
+  <ai-worklist id={id} data-example={example} data-examples={examples} data-domain={domain} data-order={order}>
+    <noscript>This widget needs JavaScript.</noscript>
+  </ai-worklist>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<script>
+  import '../scripts/worklist-widget';
+</script>
+
+<style is:global>
+  ai-worklist {
+    display: block; border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    background: var(--surface); font-family: var(--sans); font-size: 0.9rem; line-height: 1.45;
+  }
+  ai-worklist .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.55rem 0.7rem; background: var(--bg-soft); border-bottom: 1px solid var(--border); }
+  ai-worklist select, ai-worklist button {
+    font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem 0.5rem; max-width: 100%;
+  }
+  ai-worklist select { min-width: 0; flex: 1 1 12rem; }
+  ai-worklist button { cursor: pointer; }
+  ai-worklist button:hover { border-color: var(--accent); }
+  ai-worklist button.play { background: var(--accent); border-color: var(--accent); color: white; min-width: 5.5rem; }
+  ai-worklist .stepper { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--border); }
+  ai-worklist .stepper input[type=range] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+  ai-worklist .counter { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 6.5rem; text-align: right; }
+  ai-worklist .main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 16rem); border-bottom: 1px solid var(--border); }
+  @media (max-width: 760px) { ai-worklist .main { grid-template-columns: minmax(0, 1fr); } ai-worklist .code { border-left: none; border-top: 1px solid var(--border); } }
+  ai-worklist .graph { overflow-x: auto; padding: 0.4rem 0.2rem; }
+  ai-worklist .graph svg { display: block; }
+  ai-worklist .code { margin: 0; border: none; border-radius: 0; border-left: 1px solid var(--border); font-size: 0.8rem; padding: 0.6rem 0.4rem; background: var(--code-bg); overflow-x: auto; }
+  ai-worklist .code .ln { color: var(--muted); }
+  ai-worklist .code div.cur { background: var(--accent-soft); }
+  ai-worklist .edge { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+  ai-worklist .edge.back { stroke: var(--insight); stroke-dasharray: 5 3; }
+  ai-worklist .arrowhead { fill: var(--muted); }
+  ai-worklist .arrowhead.back { fill: var(--insight); }
+  ai-worklist .elabel { font-family: var(--mono); font-size: 11px; fill: var(--muted); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; font-variant-ligatures: none; }
+  ai-worklist .node circle { fill: var(--bg-soft); stroke: var(--muted); stroke-width: 1.5; }
+  ai-worklist .node .ring { fill: none; stroke: var(--insight); stroke-width: 1.5; }
+  ai-worklist .node.pending circle:not(.ring) { stroke: var(--warn); stroke-width: 2.5; stroke-dasharray: 4 2; }
+  ai-worklist .node.current circle:not(.ring) { fill: var(--accent); stroke: var(--accent); stroke-dasharray: none; }
+  ai-worklist .node.current .nname { fill: white; }
+  ai-worklist .nname { font-family: var(--sans); font-size: 10px; font-weight: 700; fill: var(--text); }
+  ai-worklist .nval { font-family: var(--mono); font-size: 11.5px; fill: var(--text); font-variant-ligatures: none; }
+  ai-worklist .nval.changed { fill: var(--accent); font-weight: 700; }
+  ai-worklist .info { padding: 0.6rem 0.9rem 0.8rem; }
+  ai-worklist .info p { margin: 0.25em 0; }
+  ai-worklist .what { font-weight: 600; }
+  ai-worklist .done { color: var(--ok); font-weight: 600; }
+  ai-worklist .chip { display: inline-block; font-family: var(--mono); font-size: 0.8rem; padding: 0 0.45rem; margin: 0 0.2rem; border-radius: 99px; border: 1px dashed var(--warn); color: var(--warn); background: var(--warn-soft); }
+  ai-worklist .muted { color: var(--muted); }
+  ai-worklist summary { cursor: pointer; color: var(--muted); }
+  ai-worklist .edges { font-family: var(--mono); font-size: 0.8rem; margin: 0.3em 0; font-variant-ligatures: none; }
+</style>
