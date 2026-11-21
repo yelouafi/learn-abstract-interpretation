@@ -1,0 +1,210 @@
+---
+layout: ../../layouts/Chapter.astro
+slug: 07-engine
+---
+import Insight from '../../components/Insight.astro';
+import Exercise from '../../components/Exercise.astro';
+import Deeper from '../../components/Deeper.astro';
+import WorklistStepper from '../../components/WorklistStepper.astro';
+
+We now have all the theory: abstract domains, least fixpoints, widening and narrowing. This chapter is about engineering, i.e. how real analyzers are organized. Three ideas carry over to almost every analyzer you will meet: represent the program as a **control-flow graph**, solve the equations with a **worklist** that only recomputes what changed, and keep the solver **independent of the domain**, so that a new domain is a plug-in.
+
+## From syntax trees to graphs
+
+The analyzer of chapter 3 walks the syntax tree: `if` analyzes both branches and joins, `while` iterates its body. That works for Tiny, but it breaks down quickly in real languages. Where does `break` jump to? `continue`? A `return` inside three nested loops, an exception, a `goto`? Each needs special plumbing in a tree walker.
+
+A **control-flow graph** (CFG) removes the problem. Its nodes are program points, the same $X_0, X_1, \dots$ as in chapter 5. An edge from $n$ to $m$ says "execution can go from point $n$ to point $m$", and carries the **actions** performed on the way. There are only two kinds:
+
+- **assign** `x = e`;
+- **assume** `[c]`: continue only if `c` holds. This is how `if` and `while` become edges: one edge assumes the condition, the other assumes its negation.
+
+Here is *Countdown* as a graph (pick other programs from the menu):
+
+<WorklistStepper id="wl-a" example="countdown" examples="countdown,abs,product,nested,dead-code" domain="signs8" order="fifo" />
+
+Straight arrows go to the next point. Arcs on the left are jumps: an arc going **up** (dashed, purple) is a **back edge**, the end of a loop body returning to the loop head. The code that builds the graph, `src/lib/cfg.ts`, is about 60 lines. With `break`, it would just add an edge from the `break` to the loop's exit node.
+
+<Insight title="the graph is the equation system">
+
+Each node's equation from chapter 5 is the join of what its incoming edges deliver:
+
+$$
+X_m \;=\; \bigsqcup_{n \to m} ⟦\text{edge}⟧\, X_n
+$$
+
+where $⟦\text{edge}⟧$ runs the edge's actions (assume filters, assign transforms). The project's tests check that the CFG produces exactly the same least fixpoint as chapter 5's equations. A CFG is just a convenient data structure for the same mathematics.
+
+</Insight>
+
+## The worklist algorithm
+
+Kleene iteration in chapter 5 recomputed **every** equation in **every** round, even ones whose inputs had not changed. That is wasteful: if nothing flowing into a node changed, its value can't change either (no hidden state, as we discussed). The **worklist algorithm** keeps a set of nodes that *may* need recomputing:
+
+```ts
+X = every node ⊥;  worklist = [entry];
+while (worklist is not empty) {
+  m = take a node from the worklist;
+  v = m is the entry ? init : ⊔ over edges n → m of runEdge(edge, X[n]);
+  if (!(v ⊑ X[m])) {
+    X[m] = X[m] ⊔ v;                    // or X[m] ∇ v at a widening point
+    add every successor of m to the worklist;
+  }
+}
+```
+
+That's the whole algorithm. The real one in `src/lib/worklist.ts` adds widening, narrowing and a step log for the widget.
+
+Press **▶ Play** on the graph above. The node being evaluated is filled blue, nodes waiting in the worklist have dashed orange outlines, and the text below says what each step did. On *Countdown* with extended signs, the worklist finishes after **13** evaluations. The round-robin iteration of chapter 5, even in the faster "in order" mode, does 24.
+
+<Insight title="why the worklist is correct">
+
+The algorithm keeps one **invariant**: every node whose inputs changed since it was last evaluated is in the worklist. So when the worklist is empty, every equation holds: $X$ is a fixpoint.
+
+It is the *least* fixpoint, by the chaotic iteration theorem of chapter 5. The worklist is just a particular order of updates, starting from $\bot$, that never neglects a node that needs work.
+
+It terminates on finite-height lattices: each node's value can only climb, at most $h \cdot |V|$ times ($h$ the height, $|V|$ the number of variables), and each climb adds only its successors. So the number of evaluations is at most about $|N| + h \cdot |V| \cdot |E|$, where $|N|$ and $|E|$ count nodes and edges. That is linear in the size of the program, for a fixed domain.
+
+</Insight>
+
+## Where to widen
+
+With intervals, some nodes must widen, or the iteration may never stop. But widening loses precision, so we want as few widening points as possible. The rule is:
+
+> **Every cycle in the graph must go through at least one widening point.**
+
+Then no value can climb forever: any infinite climb would have to go around some cycle infinitely often, and that cycle's widening point stops it.
+
+A simple way to find such points: do a **depth-first search** from the entry. An edge that goes back to a node still on the DFS stack is a **back edge**, and every cycle contains one. Widen at the **targets of back edges**. In structured programs like Tiny, those are exactly the loop heads; the tests check this on every example. In the widget, widening points have an extra purple ring. Switch the domain to **Intervals** to see widening (and the narrowing rounds after it) in action.
+
+## Order matters: for speed, and with widening, for precision
+
+The worklist doesn't say *which* node to take next. The widget offers three strategies:
+
+1. **First in, first out**: the simplest.
+2. **Priority to the earliest node**: always take the node that comes first in a **reverse postorder** of the graph, a DFS-based order in which every node comes after its predecessors (ignoring back edges). Information then flows forward through the program in one sweep before going around loops again.
+3. **Recursive**: no worklist at all. Process the nodes in a **weak topological order**, which is reverse postorder with each loop grouped as a component, nested loops inside. Stabilize each loop completely before moving on: inner loops first, every time the outer loop goes round. This strategy is from François Bourdoncle (1993).
+
+On finite domains all three compute the same least fixpoint, by chaotic iteration; only the number of evaluations differs. With **widening** that guarantee disappears, and the order can change the *result*. Choose *Nested loops*, *Intervals*, and compare the first and last strategies:
+
+<WorklistStepper id="wl-b" example="nested" examples="nested,count,sum,product" domain="intervals" order="recursive" />
+
+- With a **worklist** (either order), the analysis ends after 42 to 46 evaluations with $i \in [10, +\infty]$ after the loops. The inner loop head is evaluated again every time the outer loop increments `i`, so from its point of view `i` "keeps growing", and widening sends it to $+\infty$. Narrowing can't repair it: inside the inner loop, $i \in [0, +\infty]$ feeds itself around the inner cycle.
+- With the **recursive** strategy, it takes 78 evaluations, but the result is exact: $i = 10$, $j \in [0, 9]$. Each time the outer loop enters the inner loop, the inner loop gets a fresh widening counter. Within one visit `i` doesn't change, so only `j` and `s` are extrapolated.
+
+This is the precision/cost trade-off in miniature. Production analyzers almost all use some form of the recursive strategy, because predictable precision on nested loops matters more than a few extra evaluations. (The structural analyzer behind the playground behaves like the recursive strategy: it re-analyzes inner loops from scratch on each outer iteration.)
+
+<Insight title="weak topological orders">
+
+Bourdoncle showed that for a weak topological order where every component head is a widening point, the recursive strategy terminates and only needs widening at those heads. It also gives a natural stabilization test: a component is stable when its head stops changing, so there is no need to re-check every node inside it. Our *Nested loops* WTO is
+
+$$
+X_0\; X_1\; X_2\; (X_3\; X_4\; (X_5\; X_6\; X_7)\; X_8\; X_9)\; X_{10}\; X_{11}
+$$
+
+which mirrors the source: an outer loop component containing an inner one.
+
+</Insight>
+
+## An engine parameterized by its domain
+
+Look at the layering of the code you have been using for seven chapters:
+
+| Layer | What it knows | Files |
+| --- | --- | --- |
+| **Value domain** | one variable: lattice, arithmetic, tests, widening | `domains/sign.ts`, `signs8.ts`, `interval.ts`, `parity.ts` |
+| **State lattice** | a whole program state: assign, filter, join | `states.ts` (`abstractStates(D, vars)` for any domain; `concreteStates` too) |
+| **Solver** | the program: CFG, equations, iteration order, where to widen | `cfg.ts`, `worklist.ts`, `equations.ts`, `analyzer.ts` |
+
+No solver knows what a sign or an interval is, and no domain knows what a loop is. To prove it, chapter 4's parity exercise is now a real domain in `src/lib/domains/parity.ts`. It needed no change anywhere else beyond one line in the domain registry. Pick **Parity** in the first widget: on *Countdown*, `y` is *even* at every point. It's also in the [playground](../../playground/)'s domain picker.
+
+<Insight title="what a domain must provide">
+
+A value domain is a lattice ($\sqsubseteq, \sqcup, \sqcap, \bot, \top$), a way to abstract constants, sound abstract versions of the operators, a sound backward refinement for tests, and, if it has infinite height, a widening (plus optionally a narrowing). That is the `ValueDomain` interface in `src/lib/domain.ts`, and the whole contract between theory and engine: **if each operation is sound, the fixpoint transfer theorem (chapter 5) makes the entire analysis sound.**
+
+</Insight>
+
+## Exercises
+
+<Exercise n={1} title="draw a CFG">
+
+Draw the control-flow graph of this program, with the actions on each edge. Which edges are back edges? Check against the widget's edge list for *Product of positives*, which has the same shape.
+
+```
+n = input();
+if (n > 0) {
+  r = 1;
+  i = 1;
+  while (i < n) {
+    i = i + 1;
+    r = r * i;
+  }
+  assert(r > 0);
+}
+```
+
+<Fragment slot="solution">
+
+Nodes $X_0$ to $X_9$ (start, five assignments, the loop head, the loop exit, the assert, and the end of the `if`). The edges:
+
+- $X_0 \to X_1$: `n = input()`
+- $X_1 \to X_2$: `[n > 0]; r = 1` (the branch test sits on the edge into the first statement of the branch)
+- $X_2 \to X_3$: `i = 1`, then $X_3 \to X_4$ (the loop head): skip
+- $X_4 \to X_5$: `[i < n]; i = i + 1`, then $X_5 \to X_6$: `r = r * i`
+- $X_6 \to X_4$: skip, **the only back edge**
+- $X_4 \to X_7$ (loop exit): `[i >= n]`, then $X_7 \to X_8$: `[r > 0]`
+- $X_8 \to X_9$ (end of `if`): skip, and $X_1 \to X_9$: `[n <= 0]` for the empty `else` branch
+
+</Fragment>
+</Exercise>
+
+<Exercise n={2} title="run the worklist by hand">
+
+Run the first-in-first-out worklist on *Countdown* with extended signs. Write the worklist after each step and mark the steps that change a value. Which evaluation is the only one that changes nothing, and why does the algorithm still need it?
+
+<Fragment slot="solution">
+
+Writing `*` for "changed", and the worklist after each step:
+
+X0\* [X1] · X1\* [X2] · X2\* [X3] · X3\* [X4, X6] · X4\* [X6, X5] · X6\* [X5, X7] · X5\* [X7, X3] · X7\* [X3] · X3\* [X4, X6] · X4\* [X6, X5] · X6\* [X5, X7] · X5 [X7] · X7\* []
+
+13 evaluations. The 12th, $X_5$, changes nothing. It was added to the worklist because $X_4$ changed ($y$ became $\ge 0$ at the loop head), but $y + 2$ is still $+$. The algorithm can't know that without evaluating; this check is what proves the loop has stabilized.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={3} title="too many or too few widening points">
+
+What happens with intervals if you widen at **every** node? And if you forget the widening point of one loop in *Nested loops*?
+
+<Fragment slot="solution">
+
+**Everywhere:** it still terminates (every cycle has a widening point), but precision suffers. Values that would have stabilized on their own get extrapolated. For instance, a node after `x = x + 1` inside a loop would jump to $+\infty$ as soon as it changes twice, even when the loop head was about to stabilize. Narrowing may recover some of it, not always.
+
+**One missing:** the cycle of that loop has no widening point. If a value grows around it (like `j` in the inner loop), the iteration climbs forever, and the solver only stops at its step limit. The rule "every cycle contains a widening point" is not an optimization; it's what guarantees termination.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={4} title="adding break">
+
+Suppose Tiny gets a `break;` statement. What changes in the CFG builder? What would change in the structural analyzer of chapter 3? Which is easier, and why do real analyzers prefer graphs?
+
+<Fragment slot="solution">
+
+**CFG builder:** keep a stack of the enclosing loops' exit nodes. A `break` adds an edge from the current position (with any pending actions) to the top exit node, and the code after it in the same block becomes unreachable (no incoming edge). The solvers don't change at all.
+
+**Structural analyzer:** `exec` must return two things, the normal output state *and* the states that left through `break`. Every statement has to thread both, and `while` must join the break states into its exit. `continue`, `return` and exceptions each add another output. It works (some analyzers do this), but every new construct touches every case. With a graph, every construct is just more edges into the same solver.
+
+</Fragment>
+</Exercise>
+
+<Deeper>
+
+- **Cousot, *Principles of Abstract Interpretation***: the chapters on iteration strategies and widening (chaotic and asynchronous iteration, where to widen) give the general theory behind the three strategies in the widget.
+- **F. Bourdoncle, "Efficient chaotic iteration strategies with widenings" (1993)**: weak topological orders and the recursive strategy. Short and very readable once you have seen the widget.
+- **G. Kildall, "A unified approach to global program optimization" (POPL 1973)**: the original worklist dataflow algorithm, from compiler optimization, before abstract interpretation gave it its semantic foundation.
+- **Møller & Schwartzbach**: the chapters on dataflow analysis present the same worklist algorithm, with a careful complexity analysis.
+- **F. Nielson, H. R. Nielson & C. Hankin, *Principles of Program Analysis***: the chapter on algorithms covers worklist orderings (including reverse postorder) in depth.
+- **Rival & Yi**: the later chapters discuss how industrial analyzers are structured, including the domain/engine separation used here.
+
+</Deeper>

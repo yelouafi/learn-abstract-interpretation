@@ -75,8 +75,11 @@ States are observed at **program points**, shown at the end of the corresponding
 | `src/lib/domains/sign.ts` | the 5-element sign domain |
 | `src/lib/domains/signs8.ts` | the 8-element extended sign domain |
 | `src/lib/domains/interval.ts` | intervals, with widening and narrowing |
+| `src/lib/domains/parity.ts` | parity (even / odd) |
 | `src/lib/domains/index.ts` | domain registry and the generic α |
 | `src/lib/states.ts` | state lattices: concrete sets of states and abstract environments |
 | `src/lib/analyzer.ts` | the generic abstract interpreter |
 | `src/lib/equations.ts` | programs as equation systems, Kleene iteration |
+| `src/lib/cfg.ts` | control-flow graphs, depth-first search, weak topological order |
+| `src/lib/worklist.ts` | worklist and recursive (Bourdoncle) solvers |
 | `src/lib/soundness.ts` | checks analysis results against testing |

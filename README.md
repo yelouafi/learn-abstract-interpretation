@@ -14,7 +14,7 @@ analyzer for a tiny language one idea at a time, with interactive playgrounds an
 | 4 | Galois connections | ✅ |
 | 5 | Loops are fixpoints | ✅ |
 | 6 | Intervals, widening and narrowing | ✅ |
-| 7 | Building a real analyzer (CFG, worklist) | planned |
+| 7 | Building a real analyzer (CFG, worklist) | ✅ |
 | 8 | Relational domains | planned |
 | 9 | Beyond numbers | planned |
 
@@ -41,10 +41,13 @@ src/lib/            the analyzer, framework-free TypeScript with tests
   domains/sign.ts   the 5-element sign domain
   domains/signs8.ts the 8-element extended sign domain
   domains/interval.ts intervals, with widening and narrowing
+  domains/parity.ts parity (even/odd)
   domains/index.ts  domain registry, generic α
   states.ts         state lattices: concrete sets of states, abstract environments
   analyzer.ts       generic abstract interpreter (if → join, while → fixpoint)
   equations.ts      programs as equation systems, Kleene iteration
+  cfg.ts            control-flow graphs, DFS, weak topological order
+  worklist.ts       worklist and recursive (Bourdoncle) solvers
   soundness.ts      checks analysis results against testing
   examples.ts       example programs used by pages and tests
 src/scripts/        browser code: CodeMirror editor, <ai-playground> element
