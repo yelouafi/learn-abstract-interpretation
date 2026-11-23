@@ -15,7 +15,7 @@
 import { negate, type Program, type Stmt } from './ast';
 import type { ValueDomain } from './domain';
 import { pointKey } from './interp';
-import { abstractStates, type AEnv, type Alarm } from './states';
+import { abstractStates, type AEnv, type Alarm, type StateLattice } from './states';
 
 export type { AEnv, Alarm } from './states';
 
@@ -24,16 +24,19 @@ export type AssertVerdict = 'proved' | 'fails' | 'unknown' | 'unreachable';
 /** How a loop-head state was obtained: plain iteration, widening, or narrowing. */
 export type IterationKind = 'up' | 'widen' | 'narrow';
 
-export interface AnalysisResult<V> {
+export interface StateAnalysis<S> {
   /** point key -> abstract state at that point (final, after fixpoints) */
-  states: Map<string, AEnv<V>>;
+  states: Map<string, S>;
   asserts: Map<number, AssertVerdict>;
   alarms: Alarm[];
   /** while id -> successive loop-head states computed while looking for the fixpoint */
-  iterations: Map<number, AEnv<V>[]>;
+  iterations: Map<number, S[]>;
   /** while id -> how each of those states was obtained */
   iterationKinds: Map<number, IterationKind[]>;
 }
+
+/** The result of a non-relational analysis: one abstract value per variable. */
+export type AnalysisResult<V> = StateAnalysis<AEnv<V>>;
 
 export interface AnalyzeOptions {
   /** Start widening after this many loop iterations (only if the domain has `widen`). */
@@ -47,23 +50,27 @@ export interface AnalyzeOptions {
 }
 
 export function analyze<V>(p: Program, D: ValueDomain<V>, opts: AnalyzeOptions = {}): AnalysisResult<V> {
+  return analyzeStates(p, abstractStates(D, p.vars), opts);
+}
+
+/** The same analyzer for any state lattice, including relational ones (chapter 8). */
+export function analyzeStates<S>(p: Program, L: StateLattice<S>, opts: AnalyzeOptions = {}): StateAnalysis<S> {
   const widenDelay = opts.widenDelay ?? 3;
   const widening = opts.widening ?? true;
   const narrowSteps = opts.narrowSteps ?? 2;
   const maxIter = opts.maxIterations ?? 1000;
-  const L = abstractStates(D, p.vars);
-  const states = new Map<string, AEnv<V>>();
+  const states = new Map<string, S>();
   const asserts = new Map<number, AssertVerdict>();
   const alarms = new Map<number, Alarm[]>();
-  const iterations = new Map<number, AEnv<V>[]>();
+  const iterations = new Map<number, S[]>();
   const iterationKinds = new Map<number, IterationKind[]>();
 
-  const exec = (ss: Stmt[], env: AEnv<V>): AEnv<V> => {
+  const exec = (ss: Stmt[], env: S): S => {
     for (const s of ss) env = execStmt(s, env);
     return env;
   };
 
-  const execStmt = (s: Stmt, env: AEnv<V>): AEnv<V> => {
+  const execStmt = (s: Stmt, env: S): S => {
     switch (s.kind) {
       case 'assign': {
         const report: Alarm[] = [];
@@ -75,7 +82,7 @@ export function analyze<V>(p: Program, D: ValueDomain<V>, opts: AnalyzeOptions =
       case 'assert': {
         const t = L.filter(env, s.cond);
         const f = L.filter(env, negate(s.cond));
-        const verdict: AssertVerdict = !env ? 'unreachable' : !f ? 'proved' : !t ? 'fails' : 'unknown';
+        const verdict: AssertVerdict = L.isBottom(env) ? 'unreachable' : L.isBottom(f) ? 'proved' : L.isBottom(t) ? 'fails' : 'unknown';
         asserts.set(s.id, verdict);
         alarms.set(s.id,
           verdict === 'fails' ? [{ line: s.line, stmtId: s.id, severity: 'error', message: 'assertion always fails' }]
@@ -93,7 +100,7 @@ export function analyze<V>(p: Program, D: ValueDomain<V>, opts: AnalyzeOptions =
       case 'while': {
         // Find the loop invariant I = least solution of  I = env ⊔ body(filter(I, cond)).
         let head = env;
-        const hist: AEnv<V>[] = [head];
+        const hist: S[] = [head];
         const kinds: IterationKind[] = ['up'];
         iterations.set(s.id, hist);
         iterationKinds.set(s.id, kinds);

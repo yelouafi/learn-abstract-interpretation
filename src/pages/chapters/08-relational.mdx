@@ -1,0 +1,319 @@
+---
+layout: ../../layouts/Chapter.astro
+slug: 08-relational
+---
+import Insight from '../../components/Insight.astro';
+import Exercise from '../../components/Exercise.astro';
+import Deeper from '../../components/Deeper.astro';
+import Playground from '../../components/Playground.astro';
+import ZonePlot from '../../components/ZonePlot.astro';
+
+Since chapter 2, one kind of false alarm has never gone away. *Copy then subtract* can't prove `x - y == 0` after `y = x`. *Sum of the first n numbers* can't prove `i == n` after its loop. Each time, the reason was the same: every domain so far stores **one value per variable**, and the truth was a **relation between variables**. This chapter builds a domain that stores relations, and puts it in the engine of chapter 7 without changing the engine.
+
+## The problem: boxes forget links
+
+Here is the simplest program that intervals can't prove:
+
+```
+x = 0;
+y = 0;
+while (x < 10) {
+  x = x + 1;
+  y = y + 1;
+}
+assert(y == 10);
+```
+
+The two counters move in lockstep, so `y == x` everywhere, and `y == 10` at the end. Intervals find $x \in [0, 10]$ at the loop head (the test `x < 10` bounds it, after narrowing). But nothing ever tests `y`, so once widening has sent its upper bound to $+\infty$, narrowing has no way to bring it back: $y \in [0, +\infty]$, and the assertion may fail.
+
+Seen in the plane, the problem is plain. Each dot below is a state $(x, y)$ that the loop head actually sees. The dashed box is what intervals say. The purple shape is what this chapter's domain says:
+
+<ZonePlot id="zp-a" example="two-counters" examples="two-counters,copy,sum,bounds,countdown,abs" line={3} vars="x,y" />
+
+All the reachable states sit on the diagonal. Intervals can only draw boxes with sides parallel to the axes, and the smallest box around a diagonal is a square full of states that never happen, like $(0, 10)$. Pick other programs and lines from the menus: in *Copy then subtract* at line 2, the states are again a diagonal, and the box is the whole plane.
+
+<Insight title="non-relational means a product of sets">
+
+Chapter 2 introduced the Cartesian abstraction: keep, for each variable, the set of its values, and forget which values go together. Its concretization is a **product**:
+
+$$
+\gamma_\times(m) \;=\; m(x_1) \times m(x_2) \times \dots \times m(x_n)
+$$
+
+So any non-relational domain, whatever it stores per variable (signs, parity, intervals), can only describe products. A set like the diagonal $\{(n, n)\}$ is not a product, and the best a product can do is the smallest box around it. No improvement to the per-variable domain helps: the precision is lost by the Cartesian step itself. To do better, the abstract state must be something other than a tuple of independent values.
+
+</Insight>
+
+## Zones: bounds on differences
+
+The cheapest useful relations are **differences**. A **zone** is a conjunction of constraints of three shapes:
+
+$$
+x - y \le c \qquad\quad x \le c \qquad\quad -x \le c
+$$
+
+with integer constants $c$. That's enough for the examples above: $y - x \le 0$ and $x - y \le 0$ together say $y = x$, and $i - n \le 0$ says $i \le n$. Differences are also what loop counters, array indices and copies typically need: "the index is below the length", "this pointer is past that one", "these two counters move together".
+
+In the plane, a zone is a box with up to two corners cut by diagonal lines at 45°: the purple shape in the widget. With three or more variables it is the same idea in higher dimensions.
+
+### A matrix of bounds
+
+The trick that makes zones simple is to treat a plain bound as a difference too. Add a fake variable $v_0$ that is always $0$. Then $x \le c$ is $x - v_0 \le c$ and $x \ge c$ is $v_0 - x \le -c$. Every constraint is now $v_i - v_j \le c$, and a zone over $n$ variables is an $(n+1) \times (n+1)$ matrix, the **difference-bound matrix** (DBM):
+
+$$
+m_{ij} = c \quad\text{means}\quad v_i - v_j \le c \qquad (c = +\infty:\ \text{no constraint})
+$$
+
+For the loop head of *Two counters*, where $x, y \in [0, 10]$ and $y = x$:
+
+$$
+\begin{array}{c|ccc}
+ & 0 & x & y \\ \hline
+0 & 0 & 0 & 0 \\
+x & 10 & 0 & 0 \\
+y & 10 & 0 & 0
+\end{array}
+$$
+
+Row $x$, column $0$: $x - 0 \le 10$. Row $0$, column $x$: $0 - x \le 0$, so $x \ge 0$. Row $x$, column $y$: $x - y \le 0$; row $y$, column $x$: $y - x \le 0$; together, $y = x$. Open "The difference-bound matrix at this point" under the widget to see the matrix at any point.
+
+In `src/lib/domains/zones.ts`:
+
+```ts
+/** A difference-bound matrix, or null for the empty zone (⊥). Index 0 is the constant 0. */
+export type Zone = number[][] | null;
+```
+
+## Closure: constraints are paths
+
+Constraints chain. If $x - y \le 1$ and $y - z \le 2$, adding them gives $x - z \le 3$. So the matrix as written may not show the tightest bound on $x - z$: it is *implied* but not *stored*.
+
+Look at the matrix as a graph: one node per variable, and an edge $i \to j$ of length $m_{ij}$. A path from $x$ to $z$ through $y$ adds up the constraints along it, and gives a bound on $x - z$. The tightest bound is the **shortest path**. So making every implied constraint explicit is the all-pairs shortest-path problem, and Floyd–Warshall solves it:
+
+```ts
+export function close(m: number[][]): Zone {
+  const n = m.length;
+  const r = m.map((row) => row.slice());
+  for (let k = 0; k < n; k++)          // allow paths through k
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++)
+        r[i][j] = Math.min(r[i][j], r[i][k] + r[k][j]);
+  for (let i = 0; i < n; i++) if (r[i][i] < 0) return null;   // negative cycle: empty
+  return r;
+}
+```
+
+A **negative cycle** is a contradiction. For example, $x - y \le -1$ and $y - x \le 0$ add up to $0 \le -1$: no state satisfies both. That's how the domain detects $\bot$, and therefore dead code and impossible branches.
+
+<Insight title="closure is a normal form">
+
+Many matrices describe the same zone: you can always add a redundant constraint or loosen one that another path already implies. In terms of chapter 4, $\gamma$ is not injective on matrices. Among all the matrices with the same concretization, the closed one is the **smallest**, entry by entry. Every entry is the tightest bound the zone implies, so the closed matrix is a canonical representative of its zone.
+
+This matters because the other operations compare and combine **entries**. On closed matrices they are exact:
+
+- $A \sqsubseteq B$ iff $a_{ij} \le b_{ij}$ for all $i, j$;
+- the join (the smallest zone containing both) is the entrywise $\max$;
+- the meet is the entrywise $\min$, followed by a closure.
+
+On matrices that are not closed, the first two can give wrong answers: exercise 2 shows how. Closure costs $O(n^3)$, which is the price of relations.
+
+</Insight>
+
+## Transfer functions
+
+A zone implements `StateLattice` from chapter 5 directly, since it is a whole state and not one value per variable. The engine doesn't know the difference: the structural analyzer, the Kleene solver and the worklist all run on it unchanged. What remains is to write the two operations a program performs.
+
+**Assignment** depends on the shape of the right-hand side. Three cases:
+
+- `x = y + c`, with `y` another variable (or no variable at all: `x = c`): exact. Forget every constraint on `x`, then add $x - y \le c$ and $y - x \le -c$.
+- `x = x + c`: exact as well. Every bound involving `x` shifts by $c$: $x - v \le m$ becomes $x - v \le m + c$.
+- anything else (`x = y * z`, `x = -y`, `x = input()`): compute an interval for the expression, forget every relation of `x`, and keep only its bounds. To get the interval, the zone helps too: `x - y` gets the exact range of the difference, not the interval arithmetic of chapter 6.
+
+```ts
+assign(s, x, e) {
+  const m = copy(closed(s));                // forget needs a closed matrix (exercise 3)
+  const l = linearize(e);                   // e as  Σ coef·var + c, or null
+  const z = l && zoneShape(l);              // e as  v_plus − v_minus + c, or null
+  if (z && z.minus === 0) {
+    if (z.plus === i) return shift(m, i, z.c);                   // x = x + c
+    forget(m, i); m[i][z.plus] = z.c; m[z.plus][i] = -z.c;       // x = y + c
+    return close(m);
+  }
+  return setInterval(m, i, evalInterval(e, m));                  // fall back on bounds
+}
+```
+
+**Tests** work the same way. Move everything to one side: `a < b` is $a - b < 0$, that is $a - b + 1 \le 0$ on integers. If $a - b$ has the shape $v_i - v_j + c$, add the constraint and close. Otherwise, fall back on intervals and refine the variables that appear alone, as in chapter 6. For instance, `i < n` adds $i - n \le -1$. Then `k = i` adds $k = i$, and closure derives $k - n \le -1$ on its own: the array access is in bounds.
+
+## Join, widening and the lockstep invariant
+
+The join is the entrywise maximum of closed matrices: each constraint is loosened just enough to hold in both states. Widening is the same idea as for intervals, entry by entry: keep the bounds that held still, drop the ones that moved to $+\infty$.
+
+```ts
+widen(a, b) {      // a: previous loop-head state, b: the new one
+  const cb = closed(b);
+  return a.map((row, i) => row.map((v, j) => (cb[i][j] <= v ? v : Infinity)));
+}
+```
+
+Here is the loop head of *Two counters* while the analyzer looks for the invariant (widening after 3 rounds, as in chapter 6):
+
+| Round | State |
+| --- | --- |
+| 0 | $x = 0,\ y = 0$ |
+| 1 | $x \in [0, 1],\ y \in [0, 1],\ y = x$ |
+| 2 | $x \in [0, 2],\ y \in [0, 2],\ y = x$ |
+| 3, widen | $x \in [0, +\infty],\ y \in [0, +\infty],\ y = x$ |
+| 4, narrow | $x \in [0, 10],\ y \in [0, 10],\ y = x$ |
+
+The upper bounds kept moving, so widening dropped them. But the two entries that say $y = x$ were $0$ in every round, so widening kept them. Then narrowing restores $x \le 10$ from the test `x < 10`, as for intervals. This time closure turns $x \le 10$ and $y - x \le 0$ into $y \le 10$, a bound nothing in the program tests directly. At the exit, $x \ge 10$ and $x \le 10$ give $x = 10$, hence $y = 10$: proved.
+
+That's the general pattern. Relations that hold at every iteration survive widening, because they are stable. They then carry bounds from one variable to another.
+
+## Try it
+
+The playground below offers zones and intervals. Switch between them on each example:
+
+<Playground modes="signs,collect" domains="zones,intervals" example="sum" examples="two-counters,copy,sum,bounds,square,countdown,abs,nested" compare={true} />
+
+The relations a zone has found are shown after the `│` in each annotation. Only the ones that the intervals alone don't imply are listed. Things to notice:
+
+1. *Two counters in lockstep*, *Copy then subtract* and *Index below length* are proved with zones, not with intervals.
+2. *Sum of the first n numbers*: `i == n` is now proved. At the loop head, the zone knows $i \le n$. At the exit the test gives $i \ge n$, so $i = n$. You'll also see odd-looking facts like $s \ge i - 999$. They are true ($s \ge 0$ and $i \le 1000$ give $s \ge i - 1000$, and narrowing found one better). Closure derives every consequence it can, interesting or not.
+3. *Index below length*: at the `assert`, the zone knows $k = i$ and $i < n$, so $k < n$. Intervals see $k \in [0, +\infty]$ and $n \in [1, +\infty]$ and can't compare them. This is exactly the reasoning an array-bounds checker needs.
+4. *Squares are non-negative* still fails its first assertion. `x * x` isn't linear, so the zone falls back on intervals. Relations between variables don't help with a variable multiplied by itself.
+5. *Countdown* gains nothing visible. Its real invariant, $y = 2 \cdot (x_0 - x)$ where $x_0$ is the input, has a coefficient 2 that a zone can't express (exercise 4).
+
+## The cost of relations
+
+Intervals store $2n$ numbers and do $O(n)$ work per operation. Zones store $(n+1)^2$ numbers, and closure is $O(n^3)$. With 10 variables, that's nothing. With 10,000 variables in a real program, a single matrix has $10^8$ entries, and no analyzer can afford that at every program point.
+
+Real analyzers therefore don't relate *all* variables. They use **packing**: split the variables into small groups that are likely to be related (those that appear together in an assignment or a test) and keep one small relational state per group, with intervals for everything else. Astrée, which proved the absence of runtime errors in Airbus flight-control software, does exactly that with octagons. Choosing the packs is a heuristic, and a big part of what makes such analyzers scale.
+
+## Beyond zones: octagons and polyhedra
+
+Zones express $x - y \le c$ but not $x + y \le c$. After `y = -x`, the relation is $x + y = 0$, and a zone can't record it. Two richer domains are the classic next steps:
+
+| Domain | Constraints | Shape in the plane | Cost |
+| --- | --- | --- | --- |
+| Intervals | $\pm x \le c$ | box | $O(n)$ |
+| Zones | $x - y \le c$, $\pm x \le c$ | box with 2 corners cut at 45° | $O(n^3)$ |
+| Octagons | $\pm x \pm y \le c$ | octagon (corners cut at ±45°) | $O(n^3)$ |
+| Polyhedra | $a_1 x_1 + \dots + a_n x_n \le c$ | any convex polygon | exponential in the worst case |
+
+**Octagons** (Antoine Miné, 2001–2006) reuse the zone machinery with a clever encoding. For each variable $x$, keep two DBM variables, $x^+ = x$ and $x^- = -x$. Then $x + y \le c$ is the difference $x^+ - y^- \le c$, and the whole octagon is a DBM over $2n$ variables. Closure needs one extra step, *strong closure*, because $x^+$ and $x^-$ aren't independent: $x^+ - x^- \le c$ says $2x \le c$, a plain bound on $x$.
+
+**Polyhedra** (Patrick Cousot and Nicolas Halbwachs, 1978) allow any linear inequality. They can find invariants like $y + 2x = 2x_0$ in *Countdown*. But the representation can blow up, the operations are much more involved (they convert between inequalities and vertices), and widening is subtler. They are used when precision matters more than speed, typically on small packs of variables.
+
+<Insight title="a hierarchy of domains">
+
+Each domain in the table contains the one above it: every interval constraint is a zone constraint, every zone constraint is an octagon constraint, and every octagon constraint is a linear inequality. So the analysis can only get more precise as you go down, and more expensive. Choosing a domain is a trade-off between precision and cost, decided by the properties you want to prove. Proving array accesses needs relations like $i < n$, so zones or octagons. Proving that an integer never overflows mostly needs bounds, so intervals with good widening.
+
+None of these domains can express a non-linear fact like $y = x^2$, or a non-convex one like $x \ne 0$ (two disjoint half-lines). Those need yet other domains, or a disjunction of several states (chapter 9).
+
+</Insight>
+
+## Exercises
+
+<Exercise n={1} title="closure by hand">
+
+A zone over $x, y, z$ contains these constraints:
+
+$$
+x \le 5 \qquad y - x \le -2 \qquad z - y \le 1
+$$
+
+What is the best upper bound on $z$? Now add $z \ge 5$. What happens?
+
+<Fragment slot="solution">
+
+Follow the path $z \to y \to x \to 0$: $z - y \le 1$, $y - x \le -2$, $x - 0 \le 5$. The sum gives $z \le 1 - 2 + 5 = 4$, and that's the shortest path, so the best bound is $z \le 4$.
+
+Adding $z \ge 5$ means $0 - z \le -5$. The cycle $0 \to z \to y \to x \to 0$ now has length $-5 + 1 - 2 + 5 = -1 < 0$: a negative cycle. The zone is empty: no state satisfies all four constraints, and closure returns $\bot$.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={2} title="why join needs closure">
+
+Take two states over $x, y$, given as unclosed matrices:
+
+- $A$: $x - y \le 0$ and $y \le 0$ (nothing else written down);
+- $B$: $x \le 1$ (nothing else).
+
+Compute the entrywise maximum of $A$ and $B$ without closing them first. What does it say about $x$? Then close $A$ first and redo it.
+
+<Fragment slot="solution">
+
+**Without closure:** $x - y$: $\max(0, +\infty) = +\infty$. $y$: $\max(0, +\infty) = +\infty$. $x$: $A$ has no explicit bound, so $\max(+\infty, 1) = +\infty$. The result is $\top$: we lost everything.
+
+**With closure:** closing $A$ adds $x \le 0$ (path $x \to y \to 0$: $0 + 0$). Now the maximum on that entry is $\max(0, 1) = 1$, and the join says $x \le 1$, which is true in both states and the best answer.
+
+The entrywise maximum only works if each entry already holds the tightest bound. The same goes for $\sqsubseteq$: an unclosed $A$ might look bigger than $B$ in some entry where only an implied bound is small.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={3} title="forgetting a variable">
+
+Consider the state $x - y \le 0$, $y \le 3$, not closed, and the assignment `y = input()`. Removing every constraint on $y$ gives what? Why must assignment close the matrix before forgetting?
+
+<Fragment slot="solution">
+
+Removing the constraints that mention $y$ removes both: the result is $\top$, and we've lost $x \le 3$, which was true before the assignment and is still true after it (it doesn't depend on $y$).
+
+Closing first makes $x \le 3$ explicit (path $x \to y \to 0$). Then forgetting $y$ keeps it. In general, forgetting a variable on a closed matrix is exact: it's the projection of the zone, its "shadow" on the remaining variables. On an unclosed matrix, it throws away every fact that was only stored through that variable.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={4} title="what relates x and y in Countdown?">
+
+In *Countdown*, `x` starts at some input value $x_0$ and goes down by 1 while `y` goes up by 2. Write the exact relation between $x$, $y$ and $x_0$ at the loop head. Which domain in the table can express it? How would you give the analyzer access to $x_0$?
+
+<Fragment slot="solution">
+
+After $k$ iterations, $x = x_0 - k$ and $y = 2k$, so $y = 2(x_0 - x)$, that is $y + 2x - 2x_0 = 0$. The coefficient 2 rules out zones and octagons (their coefficients are $0$ and $\pm 1$). Polyhedra can express it, and so can the cheaper domain of **linear equalities** (Karr, 1976), which keeps only equations.
+
+The analyzer doesn't know $x_0$: it's overwritten. The usual trick is to add a *ghost variable*: `x0 = input(); x = x0;`. Then the relation is between program variables, and a polyhedra analysis finds it. Analyzers often add such ghost copies of the inputs automatically, to express summaries like "the result is the input plus two".
+
+</Fragment>
+</Exercise>
+
+<Exercise n={5} title="octagons">
+
+Write the program `x = input(); y = -x; assert(x + y == 0);` in the playground on the site and analyze it with zones. Why does it fail? In the octagon encoding with $x^+, x^-, y^+, y^-$, which DBM entries would `y = -x` set?
+
+<Fragment slot="solution">
+
+`-x` isn't of the shape $v + c$, so the zone falls back on intervals: $y$ is $\top$ with no relation to $x$, and `x + y == 0` can't be decided. The relation is a sum, not a difference.
+
+In the octagon encoding, $y = -x$ means $y^+ = x^-$ and $y^- = x^+$. So it sets $y^+ - x^- \le 0$, $x^- - y^+ \le 0$, $y^- - x^+ \le 0$, and $x^+ - y^- \le 0$. The test `x + y == 0` is $x^+ - y^- = 0$, which is then known: proved. The assignment `y = -x` is exact for octagons, just as `y = x` is for zones.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={6} title="don't close after widening">
+
+The widening above returns a matrix that is **not** closed, and the code says that this is on purpose. Why could closing the widened matrix break termination?
+
+<Fragment slot="solution">
+
+Widening guarantees termination because each entry can only go from finite to $+\infty$ once. Once dropped, it stays dropped. Closure can **undo** that: if widening dropped $x \le 5$ but kept $x - y \le 0$ and a still-growing $y \le k$, closure rebuilds a finite $x \le k$ from the path. On the next round, that rebuilt bound grows again, gets dropped again, and gets rebuilt again from a larger $k$. The sequence can climb forever.
+
+The fix used here (and by Miné) is to widen against the previous *unclosed* state and leave the result unclosed. The other operations close their inputs when they need to, so precision is restored right after the loop head, but the sequence of widened states itself still stabilizes.
+
+</Fragment>
+</Exercise>
+
+<Deeper>
+
+- **Cousot, *Principles of Abstract Interpretation***: the chapters on relational abstraction (and the reduced product and Cartesian abstraction) give the general framework: what a relational domain is, and why the Cartesian step loses exactly the information zones recover.
+- **A. Miné, "A new numerical abstract domain based on difference-bound matrices" (PADO 2001)** and **"The octagon abstract domain" (Higher-Order and Symbolic Computation, 2006)**: the papers behind this chapter. The second explains strong closure, widening and the integer case in detail.
+- **A. Miné, *Tutorial on Static Inference of Numeric Invariants by Abstract Interpretation***: covers intervals, zones, octagons and polyhedra in one consistent framework, with the algorithms spelled out. The natural next read after this chapter.
+- **P. Cousot & N. Halbwachs, "Automatic discovery of linear restraints among variables of a program" (POPL 1978)**: the polyhedra domain.
+- **M. Karr, "Affine relationships among variables of a program" (Acta Informatica, 1976)**: linear equalities, the cheap relational domain.
+- **Rival & Yi**: their chapter on relational domains walks through octagons and polyhedra with examples, and discusses packing.
+- **APRON** and **ELINA**: open-source libraries implementing these domains (ELINA with fast octagon and polyhedra algorithms), used by many research analyzers.
+
+</Deeper>

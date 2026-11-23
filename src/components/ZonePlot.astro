@@ -1,0 +1,64 @@
+---
+interface Props {
+  id?: string;
+  example?: string;
+  examples?: string;
+  line?: number;
+  vars?: string;
+  caption?: string;
+}
+const { id, example, examples, line, vars, caption } = Astro.props;
+---
+<figure class="pg-figure wide">
+  <ai-zoneplot id={id} data-example={example} data-examples={examples} data-line={line} data-vars={vars}>
+    <noscript>This widget needs JavaScript.</noscript>
+  </ai-zoneplot>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<script>
+  import '../scripts/zone-plot';
+</script>
+
+<style is:global>
+  ai-zoneplot {
+    display: block; border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    background: var(--surface); font-family: var(--sans); font-size: 0.9rem; line-height: 1.45;
+  }
+  ai-zoneplot .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem 0.8rem; align-items: center; padding: 0.55rem 0.7rem; background: var(--bg-soft); border-bottom: 1px solid var(--border); }
+  ai-zoneplot select {
+    font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem 0.5rem; max-width: 100%; min-width: 0;
+  }
+  ai-zoneplot select.dyn { flex: 1 1 14rem; }
+  ai-zoneplot label { color: var(--muted); white-space: nowrap; }
+  ai-zoneplot .main { display: grid; grid-template-columns: auto minmax(0, 1fr); border-bottom: 1px solid var(--border); }
+  @media (max-width: 760px) { ai-zoneplot .main { grid-template-columns: minmax(0, 1fr); } ai-zoneplot .code { border-left: none !important; border-top: 1px solid var(--border) !important; } }
+  ai-zoneplot .plot { padding: 0.4rem; display: flex; justify-content: center; }
+  ai-zoneplot .plot svg { display: block; max-width: 100%; height: auto; }
+  ai-zoneplot .code { margin: 0; border: none; border-radius: 0; border-left: 1px solid var(--border); font-size: 0.8rem; padding: 0.6rem 0.4rem; background: var(--code-bg); overflow-x: auto; }
+  ai-zoneplot .code .ln { color: var(--muted); }
+  ai-zoneplot .code div.pick { cursor: pointer; }
+  ai-zoneplot .code div.pick:hover { background: var(--bg-soft); }
+  ai-zoneplot .code div.cur, ai-zoneplot .code div.cur:hover { background: var(--accent-soft); }
+  ai-zoneplot .grid { stroke: var(--border); stroke-width: 0.7; }
+  ai-zoneplot .axis { stroke: var(--muted); stroke-width: 1; }
+  ai-zoneplot .tick { font-size: 10px; fill: var(--muted); font-family: var(--sans); }
+  ai-zoneplot .vname { font-size: 12px; fill: var(--text); font-family: var(--mono); font-weight: 600; }
+  ai-zoneplot polygon.ibox { fill: color-mix(in srgb, var(--warn) 14%, transparent); stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 5 3; stroke-linejoin: round; }
+  ai-zoneplot polygon.zone { fill: color-mix(in srgb, var(--insight) 26%, transparent); stroke: var(--insight); stroke-width: 2.5; stroke-linejoin: round; }
+  ai-zoneplot circle.dot { fill: var(--accent); stroke: var(--surface); stroke-width: 1; }
+  ai-zoneplot .info { padding: 0.6rem 0.9rem 0.8rem; }
+  ai-zoneplot .info p { margin: 0.25em 0; }
+  ai-zoneplot .leg { display: flex; gap: 0.5rem; align-items: baseline; }
+  ai-zoneplot .leg .rel { color: var(--insight); font-weight: 600; }
+  ai-zoneplot .sw { flex: none; display: inline-block; width: 0.9rem; height: 0.9rem; border-radius: 3px; transform: translateY(0.12rem); }
+  ai-zoneplot .sw.dot { border-radius: 50%; background: var(--accent); width: 0.6rem; height: 0.6rem; margin: 0 0.15rem; }
+  ai-zoneplot .sw.ibox { background: color-mix(in srgb, var(--warn) 14%, transparent); border: 1.5px dashed var(--warn); }
+  ai-zoneplot .sw.zone { background: color-mix(in srgb, var(--insight) 26%, transparent); border: 2px solid var(--insight); }
+  ai-zoneplot .muted { color: var(--muted); font-size: 0.85rem; }
+  ai-zoneplot summary { cursor: pointer; color: var(--muted); margin-top: 0.4em; }
+  ai-zoneplot table.dbm { font-family: var(--mono); font-size: 0.82rem; width: auto; }
+  ai-zoneplot table.dbm th, ai-zoneplot table.dbm td { text-align: center; padding: 0.15rem 0.6rem; }
+  ai-zoneplot table.dbm td.inf { color: var(--muted); }
+  ai-zoneplot table.dbm td.diag { color: var(--border); }
+</style>
