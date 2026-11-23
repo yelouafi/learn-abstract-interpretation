@@ -15,7 +15,7 @@ analyzer for a tiny language one idea at a time, with interactive playgrounds an
 | 5 | Loops are fixpoints | ✅ |
 | 6 | Intervals, widening and narrowing | ✅ |
 | 7 | Building a real analyzer (CFG, worklist) | ✅ |
-| 8 | Relational domains | planned |
+| 8 | Relational domains | ✅ |
 | 9 | Beyond numbers | planned |
 
 ## Development

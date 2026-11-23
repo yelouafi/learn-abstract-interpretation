@@ -6,13 +6,16 @@
 //   data-inputs    initial inputs for run mode, e.g. "3, -1"
 //   data-compare   "true" to open the "compare with testing" table in signs mode
 //   data-domains   comma list of domain ids for signs mode (default: "signs"); a picker
-//                  appears when there is more than one
+//                  appears when there is more than one. "zones" is the relational domain
+//                  of chapter 8.
 
 import { parse, ParseError } from '../lib/parser';
 import type { Program } from '../lib/ast';
 import { run, programPoints, type Env, type Point } from '../lib/interp';
 import { collect } from '../lib/collecting';
-import { analyze, type AEnv } from '../lib/analyzer';
+import { analyze, analyzeStates, type AEnv, type StateAnalysis } from '../lib/analyzer';
+import { zoneStates } from '../lib/domains/zones';
+import { IntervalDomain } from '../lib/domains/interval';
 import type { ValueDomain } from '../lib/domain';
 import { domainById, alphaOf, type DomainEntry } from '../lib/domains';
 import { EXAMPLES, example } from '../lib/examples';
@@ -43,6 +46,32 @@ function showSet(ns: number[]): string {
   return `{${s.join(', ')}}`;
 }
 
+const ZONES: DomainEntry = { id: 'zones', label: 'Zones (relational)', domain: IntervalDomain };
+const entryById = (id: string) => (id === 'zones' ? ZONES : domainById(id));
+
+/** What the signs tab needs from an analysis, whatever the domain. */
+interface View<V> {
+  a: StateAnalysis<unknown>;
+  show(s: unknown): string;
+  /** The value of one variable, in the value domain D used by the comparison table. */
+  project(s: unknown, x: string): V;
+  D: ValueDomain<V>;
+}
+
+function analysisView(p: Program, entry: DomainEntry): View<any> {
+  if (entry.id === 'zones') {
+    const Z = zoneStates(p.vars);
+    return { a: analyzeStates(p, Z) as StateAnalysis<unknown>, show: (s) => Z.show(s as any), project: (s, x) => Z.project(s as any, x), D: IntervalDomain };
+  }
+  const D: ValueDomain<any> = entry.domain;
+  return {
+    a: analyze(p, D) as StateAnalysis<unknown>,
+    show: (s) => showAEnv(D, s as AEnv<any>),
+    project: (s, x) => ((s as AEnv<any>) ? (s as Record<string, any>)[x] : D.bottom),
+    D,
+  };
+}
+
 class Playground extends HTMLElement {
   private modes: Mode[] = [];
   private mode!: Mode;
@@ -63,7 +92,7 @@ class Playground extends HTMLElement {
     this.mode = this.modes[0];
     this.inputs = this.dataset.inputs ?? '3';
     this.compare = this.dataset.compare === 'true';
-    this.domains = (this.dataset.domains ?? 'signs').split(',').map((s) => domainById(s.trim()));
+    this.domains = (this.dataset.domains ?? 'signs').split(',').map((s) => entryById(s.trim()));
     this.domain = this.domains[0];
     const ids = this.dataset.examples ? this.dataset.examples.split(',').map((s) => s.trim()) : EXAMPLES.map((e) => e.id);
     const initial = example(this.dataset.example ?? ids[0]);
@@ -75,7 +104,7 @@ class Playground extends HTMLElement {
     const tabs = h('div', { class: 'tabs', role: 'tablist' });
     if (this.modes.length > 1) {
       for (const m of this.modes) {
-        const label = m === 'signs' && this.domains.some((d) => d.id === 'intervals') ? '⊑ Abstract analysis' : MODE_LABEL[m];
+        const label = m === 'signs' && this.domains.some((d) => d.id === 'intervals' || d.id === 'zones') ? '⊑ Abstract analysis' : MODE_LABEL[m];
         const b = h('button', { type: 'button', role: 'tab', 'data-mode': m }, label);
         b.addEventListener('click', () => { this.mode = m; this.refresh(); });
         tabs.append(b);
@@ -195,13 +224,13 @@ class Playground extends HTMLElement {
 
   // ---- sign analysis ----------------------------------------------------------------
   private showSigns(p: Program) {
-    const D: ValueDomain<any> = this.domain.domain;
-    const a = analyze(p, D);
+    const view = analysisView(p, this.domain);
+    const a = view.a;
     const annots = new Map<number, Annotation>();
     const cls = new Map<number, string>();
     for (const [ln, pt] of pointsByLine(p)) {
       const env = a.states.get(pt.key) ?? null;
-      annots.set(ln, { text: showAEnv(D, env), cls: env ? 'abstract' : 'dim' });
+      annots.set(ln, { text: view.show(env), cls: env ? 'abstract' : 'dim' });
     }
     for (const al of a.alarms) {
       cls.set(al.line, al.severity === 'error' ? 'cm-line-error' : 'cm-line-warn');
@@ -227,7 +256,7 @@ class Playground extends HTMLElement {
     if (this.domains.length > 1) {
       const pick = h('select', { 'aria-label': 'Abstract domain' },
         ...this.domains.map((d) => { const o = h('option', { value: d.id }, d.label); o.selected = d === this.domain; return o; })) as HTMLSelectElement;
-      pick.addEventListener('change', () => { this.domain = domainById(pick.value); this.refresh(); });
+      pick.addEventListener('change', () => { this.domain = entryById(pick.value); this.refresh(); });
       this.controls.append(h('label', {}, 'Domain ', pick));
     }
     this.controls.append(h('label', {}, toggle, ' Compare with testing'));
@@ -247,16 +276,17 @@ class Playground extends HTMLElement {
           h('ol', { class: 'iters' }, ...hist.map((e, i) => {
             const kind = a.iterationKinds.get(id)?.[i];
             const tag = kind === 'widen' ? '∇ widen  ' : kind === 'narrow' ? 'Δ narrow  ' : '';
-            return h('li', {}, tag + showAEnv(D, e));
+            return h('li', {}, tag + view.show(e));
           })));
       }
       this.panel.append(det);
     }
 
-    if (this.compare) this.panel.append(this.compareTable(p, D, a.states));
+    if (this.compare) this.panel.append(this.compareTable(p, view));
   }
 
-  private compareTable<V>(p: Program, D: ValueDomain<V>, states: Map<string, AEnv<V>>) {
+  private compareTable<V>(p: Program, { D, a, project }: View<V>) {
+    const states = a.states;
     const c = collect(p, { range: 3, maxRuns: 2000, fuel: 300 });
     const tbody = h('tbody');
     for (const pt of programPoints(p)) {
@@ -265,7 +295,7 @@ class Playground extends HTMLElement {
       p.vars.forEach((x, i) => {
         const seen = envs.map((e) => e[x]);
         const alpha = alphaOf(D, seen);
-        const an: V = abs ? abs[x] : D.bottom;
+        const an: V = project(abs, x);
         const verdict = !D.leq(alpha, an) ? ['UNSOUND', 'bad'] : D.leq(an, alpha) ? ['exact', 'good'] : ['over-approximated', 'warn'];
         tbody.append(h('tr', {},
           i === 0 ? Object.assign(h('td', { class: 'ln' }, String(pt.line)), { rowSpan: p.vars.length }) : '',

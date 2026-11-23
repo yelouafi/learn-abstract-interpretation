@@ -113,6 +113,30 @@ if (n > 0 && n <= 1000) {
 `,
   },
   {
+    id: 'two-counters',
+    title: 'Two counters in lockstep',
+    code: `x = 0;
+y = 0;
+while (x < 10) {
+  x = x + 1;
+  y = y + 1;
+}
+assert(y == 10);
+`,
+  },
+  {
+    id: 'bounds',
+    title: 'Index below length',
+    code: `n = input();
+i = 0;
+while (i < n) {
+  k = i;          // think: read a[k]
+  assert(0 <= k && k < n);
+  i = i + 1;
+}
+`,
+  },
+  {
     id: 'not-equal',
     title: 'Loop with !=',
     code: `x = 0;
