@@ -5,10 +5,12 @@ slug: 08-relational
 import Insight from '../../components/Insight.astro';
 import Exercise from '../../components/Exercise.astro';
 import Deeper from '../../components/Deeper.astro';
+import InTheCode from '../../components/InTheCode.astro';
+import AnalyzerMap from '../../components/AnalyzerMap.astro';
 import Playground from '../../components/Playground.astro';
 import ZonePlot from '../../components/ZonePlot.astro';
 
-Since chapter 2, one kind of false alarm has never gone away. *Copy then subtract* can't prove `x - y == 0` after `y = x`. *Sum of the first n numbers* can't prove `i == n` after its loop. Each time, the reason was the same: every domain so far stores **one value per variable**, and the truth was a **relation between variables**. This chapter builds a domain that stores relations, and puts it in the engine of chapter 7 without changing the engine.
+Since chapter 3, one kind of false alarm has never gone away. *Copy then subtract* can't prove `x - y == 0` after `y = x`. *Sum of the first n numbers* can't prove `i == n` after its loop. Each time, the reason was the same: every domain so far stores **one value per variable**, and the truth was a **relation between variables**. This chapter builds a domain that stores relations, and plugs it into the analyzer without changing the solver.
 
 ## The problem: boxes forget links
 
@@ -77,7 +79,7 @@ $$
 
 Row $x$, column $0$: $x - 0 \le 10$. Row $0$, column $x$: $0 - x \le 0$, so $x \ge 0$. Row $x$, column $y$: $x - y \le 0$; row $y$, column $x$: $y - x \le 0$; together, $y = x$. Open "The difference-bound matrix at this point" under the widget to see the matrix at any point.
 
-In `src/lib/domains/zones.ts`:
+In code:
 
 ```ts
 /** A difference-bound matrix, or null for the empty zone (⊥). Index 0 is the constant 0. */
@@ -121,7 +123,11 @@ On matrices that are not closed, the first two can give wrong answers: exercise 
 
 ## Transfer functions
 
-A zone implements `StateLattice` from chapter 5 directly, since it is a whole state and not one value per variable. The engine doesn't know the difference: the structural analyzer, the Kleene solver and the worklist all run on it unchanged. What remains is to write the two operations a program performs.
+In the picture of chapter 3, a zone is not a value domain: it describes all the variables at once. So it replaces the **abstract state** layer, and there is no value domain under it anymore (except intervals, borrowed for the expressions zones can't handle):
+
+<AnalyzerMap focus="state" state="This chapter: a zone, one matrix of bounds for all the variables, instead of one value per variable." value="Zones only borrow intervals, for expressions they can't handle exactly." />
+
+The solver doesn't notice. It only ever asked the state layer to assign, filter, join, compare and widen, and a zone can do all five. Every solver of the previous chapters runs on zones unchanged. What remains is to write those operations, and the interesting ones are the two a program performs: assignment and tests.
 
 **Assignment** depends on the shape of the right-hand side. Three cases:
 
@@ -143,7 +149,7 @@ assign(s, x, e) {
 }
 ```
 
-**Tests** work the same way. Move everything to one side: `a < b` is $a - b < 0$, that is $a - b + 1 \le 0$ on integers. If $a - b$ has the shape $v_i - v_j + c$, add the constraint and close. Otherwise, fall back on intervals and refine the variables that appear alone, as in chapter 6. For instance, `i < n` adds $i - n \le -1$. Then `k = i` adds $k = i$, and closure derives $k - n \le -1$ on its own: the array access is in bounds.
+**Tests** work the same way. Move everything to one side: `a < b` is $a - b < 0$, that is $a - b + 1 \le 0$ on integers. If $a - b$ has the shape $v_i - v_j + c$, add the constraint and close. Otherwise, fall back on intervals and refine the variables that appear alone, as signs did in chapter 3. For instance, `i < n` adds $i - n \le -1$. Then `k = i` adds $k = i$, and closure derives $k - n \le -1$ on its own: the array access is in bounds.
 
 ## Join, widening and the lockstep invariant
 
@@ -317,3 +323,12 @@ The fix used here (and by Miné) is to widen against the previous *unclosed* sta
 - **APRON** and **ELINA**: open-source libraries implementing these domains (ELINA with fast octagon and polyhedra algorithms), used by many research analyzers.
 
 </Deeper>
+
+<InTheCode>
+
+The code for this chapter:
+
+- [`src/lib/domains/zones.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/zones.ts): abstract state: zones as difference-bound matrices, closure, assignment, tests, widening
+- [`src/lib/zones.test.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/zones.test.ts): the tests behind the claims of this chapter: soundness on every example, and what zones prove that intervals cannot
+
+</InTheCode>

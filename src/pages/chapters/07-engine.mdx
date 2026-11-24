@@ -5,6 +5,8 @@ slug: 07-engine
 import Insight from '../../components/Insight.astro';
 import Exercise from '../../components/Exercise.astro';
 import Deeper from '../../components/Deeper.astro';
+import InTheCode from '../../components/InTheCode.astro';
+import AnalyzerMap from '../../components/AnalyzerMap.astro';
 import WorklistStepper from '../../components/WorklistStepper.astro';
 
 We now have all the theory: abstract domains, least fixpoints, widening and narrowing. This chapter is about engineering, i.e. how real analyzers are organized. Three ideas carry over to almost every analyzer you will meet: represent the program as a **control-flow graph**, solve the equations with a **worklist** that only recomputes what changed, and keep the solver **independent of the domain**, so that a new domain is a plug-in.
@@ -22,7 +24,7 @@ Here is *Countdown* as a graph (pick other programs from the menu):
 
 <WorklistStepper id="wl-a" example="countdown" examples="countdown,abs,product,nested,dead-code" domain="signs8" order="fifo" />
 
-Straight arrows go to the next point. Arcs on the left are jumps: an arc going **up** (dashed, purple) is a **back edge**, the end of a loop body returning to the loop head. The code that builds the graph, `src/lib/cfg.ts`, is about 60 lines. With `break`, it would just add an edge from the `break` to the loop's exit node.
+Straight arrows go to the next point. Arcs on the left are jumps: an arc going **up** (dashed, purple) is a **back edge**, the end of a loop body returning to the loop head. The code that builds the graph is about 60 lines. With `break`, it would just add an edge from the `break` to the loop's exit node.
 
 <Insight title="the graph is the equation system">
 
@@ -52,7 +54,7 @@ while (worklist is not empty) {
 }
 ```
 
-That's the whole algorithm. The real one in `src/lib/worklist.ts` adds widening, narrowing and a step log for the widget.
+That's the whole algorithm. The real one adds widening, narrowing and a step log for the widget.
 
 Press **▶ Play** on the graph above. The node being evaluated is filled blue, nodes waiting in the worklist have dashed orange outlines, and the text below says what each step did. On *Countdown* with extended signs, the worklist finishes after **13** evaluations. The round-robin iteration of chapter 5, even in the faster "in order" mode, does 24.
 
@@ -105,21 +107,19 @@ which mirrors the source: an outer loop component containing an inner one.
 
 </Insight>
 
-## An engine parameterized by its domain
+## A solver that knows nothing about domains
 
-Look at the layering of the code you have been using for seven chapters:
+Back to the picture of chapter 3. This chapter replaced the top layer completely, and nothing below it changed:
 
-| Layer | What it knows | Files |
-| --- | --- | --- |
-| **Value domain** | one variable: lattice, arithmetic, tests, widening | `domains/sign.ts`, `signs8.ts`, `interval.ts`, `parity.ts` |
-| **State lattice** | a whole program state: assign, filter, join | `states.ts` (`abstractStates(D, vars)` for any domain; `concreteStates` too) |
-| **Solver** | the program: CFG, equations, iteration order, where to widen | `cfg.ts`, `worklist.ts`, `equations.ts`, `analyzer.ts` |
+<AnalyzerMap focus="solver" solver="This chapter: a control-flow graph instead of the syntax tree, a worklist or a recursive strategy instead of plain rounds, and widening points found from the graph." />
 
-No solver knows what a sign or an interval is, and no domain knows what a loop is. To prove it, chapter 4's parity exercise is now a real domain in `src/lib/domains/parity.ts`. It needed no change anywhere else beyond one line in the domain registry. Pick **Parity** in the first widget: on *Countdown*, `y` is *even* at every point. It's also in the [playground](../../playground/)'s domain picker.
+There are now four solvers in the project: the analyzer of chapter 3 that walks the syntax tree, the equation solver of chapter 5, and the worklist and recursive solvers of this chapter. All of them run on every abstract state and every value domain. No solver knows what a sign or an interval is, and no domain knows what a loop is.
+
+To see the separation at work, chapter 4's parity exercise is now a real value domain. Adding it changed nothing in the other layers: one line adds it to the list of domains. Pick **Parity** in the first widget: on *Countdown*, `y` is *even* at every point. It's also in the [playground](../../playground/)'s domain picker.
 
 <Insight title="what a domain must provide">
 
-A value domain is a lattice ($\sqsubseteq, \sqcup, \sqcap, \bot, \top$), a way to abstract constants, sound abstract versions of the operators, a sound backward refinement for tests, and, if it has infinite height, a widening (plus optionally a narrowing). That is the `ValueDomain` interface in `src/lib/domain.ts`, and the whole contract between theory and engine: **if each operation is sound, the fixpoint transfer theorem (chapter 5) makes the entire analysis sound.**
+A value domain is a lattice ($\sqsubseteq, \sqcup, \sqcap, \bot, \top$), a way to abstract constants, sound abstract versions of the operators, a sound backward refinement for tests, and, if it has infinite height, a widening (plus optionally a narrowing). That list is the whole contract between the theory and the rest of the analyzer: **if each operation is sound, the fixpoint transfer theorem (chapter 5) makes the entire analysis sound.**
 
 </Insight>
 
@@ -187,13 +187,13 @@ What happens with intervals if you widen at **every** node? And if you forget th
 
 <Exercise n={4} title="adding break">
 
-Suppose Tiny gets a `break;` statement. What changes in the CFG builder? What would change in the structural analyzer of chapter 3? Which is easier, and why do real analyzers prefer graphs?
+Suppose Tiny gets a `break;` statement. What changes in the CFG builder? What would change in the analyzer of chapter 3, which walks the syntax tree? Which is easier, and why do real analyzers prefer graphs?
 
 <Fragment slot="solution">
 
 **CFG builder:** keep a stack of the enclosing loops' exit nodes. A `break` adds an edge from the current position (with any pending actions) to the top exit node, and the code after it in the same block becomes unreachable (no incoming edge). The solvers don't change at all.
 
-**Structural analyzer:** `exec` must return two things, the normal output state *and* the states that left through `break`. Every statement has to thread both, and `while` must join the break states into its exit. `continue`, `return` and exceptions each add another output. It works (some analyzers do this), but every new construct touches every case. With a graph, every construct is just more edges into the same solver.
+**Syntax-tree analyzer:** the function that analyzes a statement must return two things, the normal output state *and* the states that left through `break`. Every statement has to thread both, and `while` must join the break states into its exit. `continue`, `return` and exceptions each add another output. It works (some analyzers do this), but every new construct touches every case. With a graph, every construct is just more edges into the same solver.
 
 </Fragment>
 </Exercise>
@@ -205,6 +205,17 @@ Suppose Tiny gets a `break;` statement. What changes in the CFG builder? What wo
 - **G. Kildall, "A unified approach to global program optimization" (POPL 1973)**: the original worklist dataflow algorithm, from compiler optimization, before abstract interpretation gave it its semantic foundation.
 - **Møller & Schwartzbach**: the chapters on dataflow analysis present the same worklist algorithm, with a careful complexity analysis.
 - **F. Nielson, H. R. Nielson & C. Hankin, *Principles of Program Analysis***: the chapter on algorithms covers worklist orderings (including reverse postorder) in depth.
-- **Rival & Yi**: the later chapters discuss how industrial analyzers are structured, including the domain/engine separation used here.
+- **Rival & Yi**: the later chapters discuss how industrial analyzers are structured, including the separation between solver and domains used here.
 
 </Deeper>
+
+<InTheCode>
+
+The code for this chapter:
+
+- [`src/lib/cfg.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/cfg.ts): control-flow graphs, depth-first search, back edges and the weak topological order
+- [`src/lib/worklist.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/worklist.ts): solver: the worklist (first in first out, or earliest node first) and the recursive strategy
+- [`src/lib/domain.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domain.ts): value domain: the list of operations, the contract of the insight above
+- [`src/lib/states.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/states.ts): abstract state: the operations every solver relies on
+
+</InTheCode>

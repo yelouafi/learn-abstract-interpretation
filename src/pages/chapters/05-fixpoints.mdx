@@ -5,6 +5,8 @@ slug: 05-fixpoints
 import Insight from '../../components/Insight.astro';
 import Exercise from '../../components/Exercise.astro';
 import Deeper from '../../components/Deeper.astro';
+import InTheCode from '../../components/InTheCode.astro';
+import AnalyzerMap from '../../components/AnalyzerMap.astro';
 import FixpointStepper from '../../components/FixpointStepper.astro';
 
 Loops are what make program analysis hard: a loop can run any number of times, and we have to account for all of them in finite time. Chapter 2 hinted at the answer: a program is a **system of equations**, and its meaning is the **least solution**. Chapter 3's analyzer found loop invariants by "iterating until nothing changes" without saying why that works. This chapter makes the idea explicit, solves the equations step by step, and shows why the same algorithm is exact on concrete states and always terminates on signs.
@@ -17,7 +19,7 @@ Give every program point an unknown $X_i$: the set of states that can reach that
 - **test** filters it: $[x > 0]\, X_3$ keeps only the states where $x > 0$ can hold;
 - **merge point** joins: the loop head is $X_3 = X_2 \sqcup X_5$, reached from before the loop *or* from the end of the body.
 
-The widget below builds these equations automatically from the code (open **Equations**). They are an ordinary data structure in `src/lib/equations.ts`: each unknown has a right-hand side, both as text and as a function that evaluates it.
+The widget below builds these equations automatically from the code (open **Equations**). They are an ordinary data structure: each unknown has a right-hand side, both as text and as a function that evaluates it.
 
 ## Solving by iteration
 
@@ -73,6 +75,10 @@ Why insist on the *least* solution? Because the equations have many solutions, a
 ## The same algorithm, concrete and abstract
 
 Now switch the widget's domain to **Concrete sets of states**. The equations are the same, but each $X_i$ is now a real set of states (with `input()` restricted to $-3..3$ to keep sets finite). The least fixpoint is the **collecting semantics** of chapter 2. The project's tests check that it matches, state for state, what exhaustive testing collects.
+
+In the picture of chapter 3, this widget is a new solver, and its domain menu swaps the abstract state underneath:
+
+<AnalyzerMap focus="solver,state" solver="This chapter: the program becomes a system of equations, solved by iterating them all, round after round." state="The widget can run on concrete sets of states instead: a different abstract state, with no value domain under it. The solver doesn't notice." />
 
 Then pick **Counting forever**:
 
@@ -134,7 +140,7 @@ For a monotone system over a finite-height lattice, you may update the unknowns 
 
 </Insight>
 
-This freedom is what real analyzers exploit. Instead of recomputing every equation every round, they keep a **worklist** of unknowns whose inputs changed, and recompute only those. That is the engine of chapter 7.
+This freedom is what real analyzers exploit. Instead of recomputing every equation every round, they keep a **worklist** of unknowns whose inputs changed, and recompute only those. That is the solver of chapter 7.
 
 ## Exercises
 
@@ -219,7 +225,7 @@ Explain why the in-order strategy reaches the fixpoint after only 2 rounds on *C
 
 With Jacobi, information advances one equation per round: it takes about as many rounds as the longest chain of dependencies, plus one trip around the loop for each change at the loop head. In order, the equations are already sorted along the control flow, so one round carries information from the start of the program to the end. Only the back edge of the loop (from $X_5$ to $X_3$) goes "backwards" and needs an extra round.
 
-For nested loops, a good order stabilizes the **inner** loop before propagating further: its head and body are recomputed until they stop changing, then the outer loop continues. That is exactly what the structural analyzer of chapter 3 does with its nested `while` iterations. Choosing such orders systematically (weak topological orderings, from Bourdoncle) is the subject of chapter 7.
+For nested loops, a good order stabilizes the **inner** loop before propagating further: its head and body are recomputed until they stop changing, then the outer loop continues. That is exactly what the analyzer of chapter 3 does with its nested `while` iterations. Choosing such orders systematically (weak topological orderings, from Bourdoncle) is the subject of chapter 7.
 
 </Fragment>
 </Exercise>
@@ -232,3 +238,12 @@ For nested loops, a good order stabilizes the **inner** loop before propagating 
 - **Rival & Yi**: the chapters on the general framework derive analyzers as abstract fixpoint computations, with the same soundness argument.
 
 </Deeper>
+
+<InTheCode>
+
+The code for this chapter:
+
+- [`src/lib/equations.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/equations.ts): solver: equations built from the program, and Kleene iteration (all at once or in order)
+- [`src/lib/states.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/states.ts): abstract state: both kinds used by the widget, concrete sets of states and one abstract value per variable
+
+</InTheCode>
