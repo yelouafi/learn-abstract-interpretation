@@ -137,6 +137,43 @@ while (i < n) {
 `,
   },
   {
+    id: 'taint',
+    title: 'Where does a value come from?',
+    code: `n = input();       // chosen by the user
+k = 10;
+m = k * 2 + 1;     // built from constants only
+q = 1000 / m;
+if (n > 0) {
+  r = 1000 / n;    // never zero here, but the user picks it
+}
+z = n - n;         // always 0, still made from n
+`,
+  },
+  {
+    id: 'implicit-flow',
+    title: 'An implicit flow',
+    code: `secret = input();
+x = 0;
+if (secret > 0) {
+  x = 1;           // x now reveals whether secret > 0
+}
+y = x + 5;
+`,
+  },
+  {
+    id: 'sign-split',
+    title: 'Dividing by a sign',
+    code: `x = input();
+if (x < 0) {
+  s = -1;
+} else {
+  s = 1;
+}
+y = 100 / s;       // s is -1 or 1, never 0
+assert(s != 0);
+`,
+  },
+  {
     id: 'not-equal',
     title: 'Loop with !=',
     code: `x = 0;

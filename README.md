@@ -16,7 +16,7 @@ analyzer for a tiny language one idea at a time, with interactive playgrounds an
 | 6 | Intervals, widening and narrowing | ✅ |
 | 7 | Building a real analyzer (CFG, worklist) | ✅ |
 | 8 | Relational domains | ✅ |
-| 9 | Beyond numbers | planned |
+| 9 | Beyond numbers | ✅ |
 
 ## Development
 

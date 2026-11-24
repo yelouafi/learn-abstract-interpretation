@@ -15,7 +15,7 @@ export const CHAPTERS: Chapter[] = [
   { n: 6, slug: '06-intervals', title: 'Intervals, widening and narrowing', blurb: 'An infinite lattice, an analysis that never stops, and the trick that forces it to.', ready: true },
   { n: 7, slug: '07-engine', title: 'Building a real analyzer', blurb: 'Control-flow graphs, worklists, and an engine parameterized by its domain.', ready: true },
   { n: 8, slug: '08-relational', title: 'Relational domains', blurb: 'Why intervals cannot prove x ≤ y: zones, octagons and polyhedra.', ready: true },
-  { n: 9, slug: '09-beyond', title: 'Beyond numbers', blurb: 'Nullness, taint, pointers, and a tour of industrial analyzers.', ready: false },
+  { n: 9, slug: '09-beyond', title: 'Beyond numbers', blurb: 'Nullness, taint, pointers, and a tour of industrial analyzers.', ready: true },
 ];
 
 export function url(path = '') {

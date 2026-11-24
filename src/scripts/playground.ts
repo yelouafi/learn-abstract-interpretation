@@ -15,7 +15,9 @@ import { run, programPoints, type Env, type Point } from '../lib/interp';
 import { collect } from '../lib/collecting';
 import { analyze, analyzeStates, type AEnv, type StateAnalysis, type TraceStep } from '../lib/analyzer';
 import { zoneStates } from '../lib/domains/zones';
-import { IntervalDomain } from '../lib/domains/interval';
+import { IntervalDomain, type Interval } from '../lib/domains/interval';
+import { abstractStates } from '../lib/states';
+import { disjunctive } from '../lib/disjunctive';
 import type { ValueDomain } from '../lib/domain';
 import { domainById, alphaOf, type DomainEntry } from '../lib/domains';
 import { EXAMPLES, example } from '../lib/examples';
@@ -47,7 +49,8 @@ function showSet(ns: number[]): string {
 }
 
 const ZONES: DomainEntry = { id: 'zones', label: 'Zones (relational)', domain: IntervalDomain };
-const entryById = (id: string) => (id === 'zones' ? ZONES : domainById(id));
+const CASES: DomainEntry = { id: 'cases', label: 'Intervals, up to 4 cases', domain: IntervalDomain };
+const entryById = (id: string) => (id === 'zones' ? ZONES : id === 'cases' ? CASES : domainById(id));
 
 /** What the signs tab needs from an analysis, whatever the domain. */
 interface View<V> {
@@ -64,6 +67,19 @@ function analysisView(p: Program, entry: DomainEntry, trace?: TraceStep<unknown>
   if (entry.id === 'zones') {
     const Z = zoneStates(p.vars);
     return { a: analyzeStates(p, Z, { trace }) as StateAnalysis<unknown>, show: (s) => Z.show(s as any), showFull: (s) => Z.show(s as any, true), project: (s, x) => Z.project(s as any, x), D: IntervalDomain };
+  }
+  if (entry.id === 'cases') {
+    const L = disjunctive(abstractStates(IntervalDomain, p.vars), 4);
+    const show = (s: unknown) => {
+      const cases = s as AEnv<Interval>[];
+      return cases.length === 0 ? '⊥ unreachable' : cases.length === 1 ? showAEnv(IntervalDomain, cases[0]) : cases.map((c) => `(${showAEnv(IntervalDomain, c)})`).join('  or  ');
+    };
+    return {
+      a: analyzeStates(p, L, { trace }) as StateAnalysis<unknown>,
+      show, showFull: show,
+      project: (s, x) => (s as AEnv<Interval>[]).reduce((acc: Interval, c) => IntervalDomain.join(acc, c ? c[x] : null), null),
+      D: IntervalDomain,
+    };
   }
   const D: ValueDomain<any> = entry.domain;
   return {
@@ -111,7 +127,7 @@ class Playground extends HTMLElement {
     const tabs = h('div', { class: 'tabs', role: 'tablist' });
     if (this.modes.length > 1) {
       for (const m of this.modes) {
-        const label = m === 'signs' && this.domains.some((d) => d.id === 'intervals' || d.id === 'zones') ? '⊑ Abstract analysis' : MODE_LABEL[m];
+        const label = m === 'signs' && this.domains.some((d) => ['intervals', 'zones', 'cases', 'taint'].includes(d.id)) ? '⊑ Abstract analysis' : MODE_LABEL[m];
         const b = h('button', { type: 'button', role: 'tab', 'data-mode': m }, label);
         b.addEventListener('click', () => { this.mode = m; this.refresh(); });
         tabs.append(b);
@@ -318,9 +334,11 @@ class Playground extends HTMLElement {
         btn('▶', 'Next step', () => (this.astep = Math.min(n, this.astep + 1))),
         btn('⏭', 'Final result', () => (this.astep = n)),
         counter),
-      h('div', { class: 'stepper jumps' },
-        btn('◀ loop head', 'Previous loop-head step', () => nextHead(-1)),
-        btn('loop head ▶', 'Next loop-head step', () => nextHead(1))));
+      trace.some((t, k) => isHead(k))
+        ? h('div', { class: 'stepper jumps' },
+          btn('◀ loop head', 'Previous loop-head step', () => nextHead(-1)),
+          btn('loop head ▶', 'Next loop-head step', () => nextHead(1)))
+        : '');
     this.panel.append(note);
     render();
 
