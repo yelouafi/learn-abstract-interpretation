@@ -59,9 +59,10 @@ const { modes, example, examples, inputs, compare, caption, domains } = Astro.pr
   ai-playground table { width: 100%; font-size: 0.82rem; }
   ai-playground td.sym { font-family: var(--mono); text-align: center; }
   ai-playground td.ln { color: var(--muted); vertical-align: top; }
-  ai-playground .astepper { margin-bottom: 0.6em; padding-bottom: 0.5em; border-bottom: 1px dashed var(--border); }
+  ai-playground .stepbar { padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--border); }
+  ai-playground .stepbar:empty { display: none; }
   ai-playground .stepper.jumps { margin-top: 0.3em; }
-  ai-playground .trace-note { margin-top: 0.4em; min-height: 2.6em; }
+  ai-playground .trace-note { margin-bottom: 0.6em; padding-bottom: 0.5em; min-height: 2.6em; border-bottom: 1px dashed var(--border); }
   ai-playground .trace-note p { margin: 0.15em 0; }
   ai-playground .trace-note .state { white-space: pre-wrap; font-family: var(--mono); font-size: 0.82rem; color: var(--accent); font-variant-ligatures: none; }
   ai-playground .trace-note .muted { color: var(--muted); }

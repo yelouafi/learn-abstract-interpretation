@@ -256,7 +256,7 @@ Things to try:
 2. **Division alarms**: line 4 is safe (`b` is $+$ there); line 6 may divide by zero, and the alarm is real.
 3. **Dead code**: the analyzer proves line 5 unreachable ($\bot$): `y` is $+ \times + = +$, so `y < 0` is impossible.
 4. Edit any program. Analysis reruns as you type.
-5. **Step through the analysis.** Under the code, ⏮ goes back to the first step and ▶ moves one step at a time: each assignment, each test, each join, each round at a loop head. The text under the buttons says what the analyzer is doing, and the annotations fill in as it goes. **loop head ▶** jumps straight to the next round of a loop. ⏭ goes back to the final result.
+5. **Step through the analysis.** Above the code, ⏮ goes back to the first step and ▶ moves one step at a time: each assignment, each test, each join, each round at a loop head. The text under the code says what the analyzer is doing, and the annotations fill in as it goes. **loop head ▶** jumps straight to the next round of a loop. ⏭ goes back to the final result.
 
 ## Where precision goes
 

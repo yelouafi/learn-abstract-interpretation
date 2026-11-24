@@ -80,6 +80,8 @@ class Playground extends HTMLElement {
   private mode!: Mode;
   private editor!: ReturnType<typeof createEditor>;
   private controls!: HTMLElement;
+  /** Step controls, above the code (as in the other widgets). */
+  private stepbar!: HTMLElement;
   private panel!: HTMLElement;
   private timer = 0;
   private step = -1;
@@ -119,7 +121,8 @@ class Playground extends HTMLElement {
     this.controls = h('div', { class: 'controls' });
     const editorHost = h('div', { class: 'editor' });
     this.panel = h('div', { class: 'panel' });
-    this.append(h('div', { class: 'toolbar' }, select, tabs), this.controls, editorHost, this.panel);
+    this.stepbar = h('div', { class: 'stepbar' });
+    this.append(h('div', { class: 'toolbar' }, select, tabs), this.controls, this.stepbar, editorHost, this.panel);
 
     this.editor = createEditor(editorHost, initial.code, () => {
       clearTimeout(this.timer);
@@ -131,6 +134,7 @@ class Playground extends HTMLElement {
   private refresh() {
     this.querySelectorAll<HTMLButtonElement>('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === this.mode)));
     this.controls.replaceChildren();
+    this.stepbar.replaceChildren();
     this.panel.replaceChildren();
     let p: Program;
     try {
@@ -184,14 +188,15 @@ class Playground extends HTMLElement {
       : s.kind === 'assert-failed' ? `✗ assertion failed on line ${s.line}`
       : s.kind === 'error' ? `✗ ${s.message} on line ${s.line}`
       : '∞ stopped after 1000 loop iterations (probably does not terminate)';
-    this.panel.append(
+    this.stepbar.append(
       h('div', { class: 'stepper' },
         btn('⏮', 'First step', () => (this.step = 0)),
         btn('◀', 'Previous step', () => (this.step = Math.max(0, this.step - 1))),
         slider,
         btn('▶', 'Next step', () => (this.step = Math.min(n - 1, this.step + 1))),
         btn('⏭', 'Last step', () => (this.step = n - 1)),
-        counter),
+        counter));
+    this.panel.append(
       h('p', { class: `status ${s.kind === 'ok' ? 'good' : 'bad'}` }, statusText,
         res.inputsUsed.length ? h('span', { class: 'muted' }, `inputs read: ${res.inputsUsed.join(', ')}`) : ''),
     );
@@ -305,7 +310,7 @@ class Playground extends HTMLElement {
       for (let k = this.astep + dir; k >= 0 && k < n; k += dir) if (isHead(k)) { this.astep = k; return; }
       this.astep = dir > 0 ? n : 0;
     };
-    this.panel.append(h('div', { class: 'astepper' },
+    this.stepbar.append(
       h('div', { class: 'stepper' },
         btn('⏮', 'First step', () => (this.astep = 0)),
         btn('◀', 'Previous step', () => (this.astep = Math.max(0, this.astep - 1))),
@@ -315,8 +320,8 @@ class Playground extends HTMLElement {
         counter),
       h('div', { class: 'stepper jumps' },
         btn('◀ loop head', 'Previous loop-head step', () => nextHead(-1)),
-        btn('loop head ▶', 'Next loop-head step', () => nextHead(1))),
-      note));
+        btn('loop head ▶', 'Next loop-head step', () => nextHead(1))));
+    this.panel.append(note);
     render();
 
     const alarms = a.alarms.length
