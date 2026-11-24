@@ -109,11 +109,12 @@ export interface ZoneLattice extends StateLattice<Zone> {
   project(s: Zone, x: string): Interval;
   /** Tightest bounds on  x − y. */
   difference(s: Zone, x: string, y: string): Interval;
-  /** The constraints between pairs of variables that the intervals alone do not imply. */
-  relations(s: Zone): string[];
+  /** The constraints between pairs of variables that the intervals alone do not imply (all of them with `all`). */
+  relations(s: Zone, all?: boolean): string[];
   /** Does a concrete environment satisfy every constraint? (for soundness tests) */
   contains(s: Zone, env: Record<string, number>): boolean;
-  show(s: Zone): string;
+  /** Intervals, then the relations; `all` also lists relations the intervals already imply. */
+  show(s: Zone, all?: boolean): string;
   /** The closed DBM (for display). */
   closed(s: Zone): Zone;
 }
@@ -299,7 +300,7 @@ export function zoneStates(vars: string[]): ZoneLattice {
       const m = closed(s);
       return m && bound(m, index.get(x)!, index.get(y)!);
     },
-    relations(s) {
+    relations(s, all = false) {
       const m = closed(s);
       if (!m) return [];
       const out: string[] = [];
@@ -308,7 +309,7 @@ export function zoneStates(vars: string[]): ZoneLattice {
         const hi = m[b][a], lo = -m[a][b];
         // What the two intervals alone would give for v_b − v_a:
         const implHi = m[b][0] + m[0][a], implLo = -(m[a][0] + m[0][b]);
-        const useHi = hi < implHi, useLo = lo > implLo;
+        const useHi = hi < implHi || (all && hi < INF), useLo = lo > implLo || (all && lo > -INF);
         if (!useHi && !useLo) continue;
         const X = vars[b - 1], Y = vars[a - 1];
         const plus = (k: number) => (k === 0 ? Y : k > 0 ? `${Y} + ${k}` : `${Y} − ${-k}`);
@@ -326,11 +327,11 @@ export function zoneStates(vars: string[]): ZoneLattice {
       for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (v(i) - v(j) > m[i][j]) return false;
       return true;
     },
-    show(s) {
+    show(s, all = false) {
       const m = closed(s);
       if (!m) return '⊥ unreachable';
       const vals = vars.map((x) => `${x}: ${L.showVar(m, x)}`).join('   ');
-      const rel = L.relations(m);
+      const rel = L.relations(m, all);
       return rel.length ? `${vals}   │ ${rel.join(', ')}` : vals;
     },
     closed,

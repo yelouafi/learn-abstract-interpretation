@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parse } from './parser';
 import { collect } from './collecting';
-import { analyze, analyzeStates } from './analyzer';
+import { analyze, analyzeStates, type TraceStep } from './analyzer';
 import { buildCfg } from './cfg';
 import { worklistSolve } from './worklist';
 import { EXAMPLES, example } from './examples';
@@ -104,3 +104,32 @@ describe('zone analysis', () => {
     }
   });
 });
+
+describe('analysis trace (the playground stepper)', () => {
+  it('ends with the final state of every point', () => {
+    for (const ex of EXAMPLES) {
+      const p = parse(ex.code);
+      const Z = zoneStates(p.vars);
+      const trace: TraceStep<any>[] = [];
+      const a = analyzeStates(p, Z, { trace });
+      const last = new Map<string, any>();
+      for (const t of trace) if (t.point) last.set(t.point, t.state);
+      expect([...last.keys()].sort(), ex.id).toEqual([...a.states.keys()].sort());
+      for (const [k, st] of a.states) expect(Z.show(last.get(k)), `${ex.id} ${k}`).toBe(Z.show(st));
+    }
+  });
+
+  it('shows y − x going 0, −1, 0 around the lockstep loop', () => {
+    const p = parse(example('two-counters').code);
+    const Z = zoneStates(p.vars);
+    const trace: TraceStep<any>[] = [];
+    analyzeStates(p, Z, { trace });
+    const at = (line: number) => trace.filter((t) => t.line === line && t.point).map((t) => Z.show(t.state, true));
+    expect(at(2)[0]).toBe('x: 0   y: 0   │ y = x');
+    expect(at(4)[0]).toBe('x: 1   y: 0   │ y = x − 1');
+    expect(at(5)[0]).toBe('x: 1   y: 1   │ y = x');
+    expect(at(3).slice(0, 2)).toEqual(['x: 0   y: 0   │ y = x', 'x: [0, 1]   y: [0, 1]   │ y = x']);
+    expect(trace.map((t) => t.kind).filter((k) => k === 'widen' || k === 'narrow')).toEqual(['widen', 'narrow']);
+  });
+});
+
