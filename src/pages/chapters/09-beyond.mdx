@@ -1,0 +1,308 @@
+---
+layout: ../../layouts/Chapter.astro
+slug: 09-beyond
+---
+import Insight from '../../components/Insight.astro';
+import Exercise from '../../components/Exercise.astro';
+import Deeper from '../../components/Deeper.astro';
+import InTheCode from '../../components/InTheCode.astro';
+import AnalyzerMap from '../../components/AnalyzerMap.astro';
+import Playground from '../../components/Playground.astro';
+
+Every domain so far described integers: their sign, their range, their differences. Nothing in the theory needed that. A Galois connection relates *any* set of concrete things to *any* lattice of descriptions, and the solver only asks the layers below it to assign, filter, join and compare. This last chapter uses that freedom. First, a property that isn't about values at all (where data comes from). Then, an abstract state that keeps several cases instead of one. Then, a quick look at the things real programs have and Tiny lacks: `null`, pointers and procedures. It ends with a tour of the analyzers used in industry and a map of where to go next.
+
+## Taint: where does a value come from?
+
+A security question: can the user influence this value? If a string from a web form reaches an SQL query unchanged, that's an injection. If a number from the network decides the size of a buffer, that's an overflow waiting to happen. **Taint analysis** answers it by marking every value that is derived from input as *tainted*, following the data through the program, and raising an alarm when a tainted value reaches a dangerous place (a **sink**).
+
+The domain is tiny:
+
+$$
+\bot \;\sqsubseteq\; \textit{clean} \;\sqsubseteq\; \textit{tainted}
+$$
+
+- a constant is *clean*;
+- `input()` is *tainted*;
+- `a + b`, `a * b`, … is tainted if either operand is: the join of the two;
+- a test like `n > 0` teaches nothing about where `n` came from, so filtering leaves taint unchanged.
+
+Taint knows nothing about *which* number a value is. On its own it can't say whether a division is safe. So the playground runs it **next to** intervals: each variable gets an interval and a taint, and the annotation says `(tainted)` when the user can influence it.
+
+In the picture of chapter 3, only the bottom layer changes:
+
+<AnalyzerMap focus="value" value="This chapter: each variable gets a pair, an interval and a taint. The two halves are computed side by side." />
+
+<Playground modes="signs" domains="taint" example="taint" examples="taint,implicit-flow,abs,countdown,division,product" />
+
+Things to notice:
+
+1. `m` and `q` are clean: they are built from constants only. `r` is tainted: on line 6 the user chooses the divisor. The intervals prove that it isn't zero, and the taint tells you who picked it: two different questions, answered side by side.
+2. `z = n - n` is always 0, and still tainted. Taint follows **data**, not values: `z` is computed from `n`, so it is marked. That's an over-approximation, and a typical source of false alarms in taint tools.
+3. Pick *An implicit flow*. `x` ends up clean, yet whether `x` is 0 or 1 reveals whether `secret > 0`. The value of `secret` never flows into `x`; only the *decision* to assign it does. Taint as defined here only follows data, so it misses this (exercise 2).
+
+<Insight title="abstracting an instrumented semantics">
+
+What is γ(*tainted*)? Not a set of integers: every integer can be tainted or not. Taint is an abstraction of a different concrete semantics, one in which each value carries a label, "came from input" or not, and each operation labels its result with the labels of its operands. This **instrumented semantics** records something the plain semantics forgets. The collecting semantics of chapter 2 is one choice of "what really happens", and you are free to pick another one, as long as it records the property you care about. Everything else (Galois connections, sound operators, fixpoint transfer) works unchanged on top of it.
+
+The project's tests do exactly that: a small interpreter runs programs with labelled values, and every label it sees must be predicted by the analysis.
+
+</Insight>
+
+### Combining domains
+
+Running two domains side by side, like intervals and taint, is called their **product**. A pair $(a, b)$ describes the values described by $a$ *and* by $b$:
+
+$$
+\gamma(a, b) \;=\; \gamma_1(a) \cap \gamma_2(b)
+$$
+
+Every operation works component by component. The code for the product is about 40 lines and works for any two value domains. Signs × parity, intervals × parity, intervals × taint all come for free.
+
+A plain product misses one trick. With intervals × parity, suppose $x \in [1, 1]$ and $x$ is *even*. No integer satisfies both, so the pair should be $\bot$. But each side, looked at alone, is fine. A **reduced product** adds a step that lets each side refine the other: here, "even" shrinks $[1, 4]$ to $[2, 4]$ and turns $[1, 1]$ into $\bot$. Real analyzers combine dozens of domains this way, each one specialized, with reductions between them.
+
+## When the truth has holes: disjunctions
+
+Here is a program with no bug that most domains so far get wrong:
+
+```
+x = input();
+if (x < 0) { s = -1; } else { s = 1; }
+y = 100 / s;
+```
+
+After the `if`, $s$ is $-1$ or $1$. Intervals join the two branches into $[-1, 1]$, which contains 0, and raise a "possible division by zero". Extended signs get lucky: $- \sqcup + = {\ne 0}$ has a name (and so does parity, since $-1$ and $1$ are both odd). But the problem is general. The set $\{-1, 1\}$ has a hole in the middle, and intervals, zones, octagons and polyhedra all describe **convex** sets, with no holes. Their join fills the hole.
+
+The fix is to not join. Keep the two branches as two separate cases, "$x < 0$ and $s = -1$" **or** "$x \ge 0$ and $s = 1$", and run each later statement on each case. At the division, neither case contains 0: proved.
+
+This changes the abstract state layer: a state is now a short list of interval states, read as "or".
+
+<AnalyzerMap focus="state" state="This chapter: a list of up to 4 states, read as “or”. The join keeps the cases separate instead of merging them." value="Unchanged: intervals." />
+
+Pick **Intervals, up to 4 cases** and compare with **Intervals** on each program:
+
+<Playground modes="signs,collect" domains="cases,intervals,signs8" example="sign-split" examples="sign-split,abs,implicit-flow,dead-code,division,countdown" />
+
+1. *Dividing by a sign*: no alarm with cases, two with plain intervals.
+2. *An implicit flow*: the cases show exactly what taint missed. After the `if`, the state is "($secret \ge 1$ and $x = 1$) or ($secret \le 0$ and $x = 0$)". The dependence of `x` on `secret` is right there.
+3. *Countdown*: no change. In a loop, the analyzer widens, and widening joins everything into one case (otherwise the number of cases could grow forever).
+
+<Insight title="disjunctive completion and its price">
+
+Keeping arbitrary sets of abstract states, instead of single ones, is called the **disjunctive completion** of a domain (Cousot and Cousot, 1979). It can express any finite union, so it never loses precision at a join. The price is size: $n$ `if`s in a row can produce $2^n$ cases. Every practical analyzer bounds it. The playground keeps at most 4 cases and joins them all past that; Astrée's **trace partitioning** decides *where* to split (typically on the branches that guard a later division or array access) and *where* to merge back (a few statements later). Like the choice of domain, the choice of what to keep separate is a precision/cost dial.
+
+</Insight>
+
+## Nullness: the same machinery, another language
+
+Tiny has no pointers, but you have seen this analysis many times in real languages. In TypeScript, with `strictNullChecks`:
+
+```ts
+function greet(user: User | null) {
+  let name: string | null = null;
+  if (user != null) {
+    name = user.name;        // here user is known to be non-null
+  }
+  return name.length;        // error: 'name' is possibly 'null'
+}
+```
+
+That is an abstract interpretation with this domain:
+
+$$
+\bot \;\sqsubseteq\; \textit{Null},\ \textit{NonNull} \;\sqsubseteq\; \textit{MaybeNull}
+$$
+
+It has the same shape as parity (two basic cases), and every piece of the course has a counterpart:
+
+- `null` is *Null*, `new …` and `"text"` are *NonNull*;
+- `if (user != null)` is a **filter**, exactly like `if (x > 0)` for signs: it keeps the *NonNull* case on the `then` branch;
+- the end of the `if` is a **join**: *Null* ⊔ *NonNull* = *MaybeNull*;
+- dereferencing (`name.length`) is the **sink**: an alarm unless the value is *NonNull*, just as division is an alarm unless the divisor excludes 0.
+
+TypeScript calls it *narrowing*, Kotlin *smart casts*, and both run it on the control-flow graph of each function. They also make deliberate unsound choices to avoid false alarms: TypeScript keeps a narrowing of `obj.prop` across a function call that could, in principle, change `obj.prop`. That is a design decision about the precision/soundness trade-off of chapter 1, made by a language team for millions of users.
+
+## Pointers and the heap
+
+Once a program has pointers, every assignment through a pointer raises the question: **which object** does it change? The standard abstraction names objects by their **allocation site**: all the objects created by the same `new` in the source are one abstract object. A **points-to analysis** computes, for each pointer variable, the set of abstract objects it may point to.
+
+```
+p = new Box();      // site A
+q = new Box();      // site B
+if (c) { q = p; }
+q.v = 0;            // q may point to A or to B
+y = 10 / p.v;
+```
+
+Here $q \mapsto \{A, B\}$. The write `q.v = 0` may change $A$ or $B$, and the analyzer can't tell which. So it must keep both possibilities: $A.v$ becomes $A.v \sqcup 0$. That's a **weak update**, and if $A.v$ was $[1, 5]$ it is now $[0, 5]$, so the division gets an alarm. Only when a pointer surely designates one single concrete object can the analyzer replace the old value, a **strong update**.
+
+<Insight title="summary objects are α again">
+
+An allocation site inside a loop creates many concrete objects, but the analysis has one abstract object for all of them: a **summary**. That's the same move as abstracting a set of integers by an interval: many concrete things, one description. And it has the same consequence, a loss of precision. A write to one list node is a write to "some node of this kind", so it must be weak. Much of the research on heap analysis (shape analysis, separation logic, recency abstraction) is about knowing when a summary stands for exactly one object, so that strong updates become possible again.
+
+</Insight>
+
+Points-to analyses also come with their own precision/cost dial. **Andersen's** analysis treats `p = q` as "everything q points to, p may point to" (cubic time in the worst case). **Steensgaard's** treats it as "p and q point to the same things" and merges them (almost linear time, coarser). Production tools pick a point between them, often per part of the program.
+
+## Procedures
+
+Tiny has no procedures either. With them, the solver has a new choice to make at each call:
+
+- **Re-analyze the callee for every call site**, with that call's arguments. Precise, but exponential if calls are nested deeply, and it never ends on recursion without widening.
+- **Compute a summary** of each procedure once, a function from abstract input to abstract output, and apply it at every call. Recursion becomes one more fixpoint, over summaries. Scalable, but a summary must cover all callers at once.
+
+Between the two, **context sensitivity** keeps a little of the calling context: the last call site, or the last $k$ of them ($k$-CFA), or the abstract value of the arguments. It's the same dial again: more context, more precision, more cost. Meta's Infer is built around summaries: each procedure is analyzed once, independently of its callers, which is what lets it analyze only the code changed by a commit.
+
+## A tour of industrial analyzers
+
+The ideas of this course run in tools that check real software every day. A few of them:
+
+| Tool | Language | What it's for | Notable ideas |
+| --- | --- | --- | --- |
+| **Astrée** (ENS, then AbsInt) | C | proving the absence of run-time errors in embedded control software; used on Airbus flight-control code | intervals, octagons, specialized domains for digital filters, trace partitioning; tuned to give zero false alarms on its target programs |
+| **Frama-C / Eva** (CEA, Inria) | C | value analysis for safety and security audits | a modular platform: Eva computes values; other plug-ins prove contracts and slice code |
+| **Polyspace** (MathWorks) | C, C++, Ada | run-time error proofs in automotive, aerospace and medical code | grew out of research on the analysis of embedded code at INRIA |
+| **Infer** (Meta) | Java, C, C++, Objective-C | nullness, resource leaks, data races, on every code change | separation logic and bi-abduction; compositional summaries |
+| **IKOS** (NASA) | C, C++ | a library for building sound analyzers | many numerical domains behind one interface, on LLVM bitcode |
+| **Mopsa** (Sorbonne Université) | C, Python | research analyzer for several languages | domains combined like building blocks, shared across languages |
+| **Goblint** (TU Munich, Univ. of Tartu) | C | data races and concurrency bugs | abstract interpretation of multithreaded programs |
+
+Abstract interpretation also appears where it isn't called that. Compilers compute value ranges to remove bounds checks and dead branches. Type checkers are abstract interpreters whose abstract values are types (Cousot, "Types as abstract interpretations", 1997). Verifiers for neural networks propagate boxes, zonotopes or polyhedra through the layers of a network to prove that small changes to an image can't change its label.
+
+## What you have now
+
+Each chapter added one piece:
+
+1. **Why approximate:** exact answers are impossible, so trade precision for certainty; sound means no missed bug.
+2. **Collecting semantics:** the set of all reachable states, the thing to approximate.
+3. **Signs:** a first domain, case-by-case abstract arithmetic, tests as filters, and the three layers of an analyzer.
+4. **Galois connections:** α and γ as a contract, best operators $\alpha \circ f \circ \gamma$, and when a domain is correct.
+5. **Fixpoints:** programs as equations, Kleene iteration, and the transfer theorem that makes local soundness global.
+6. **Intervals:** infinite height, widening to force termination, narrowing to win back precision.
+7. **The engine:** control-flow graphs, worklists, iteration orders, and a solver independent of the domain.
+8. **Relations:** zones, closure as shortest paths, and the hierarchy up to polyhedra.
+9. **Beyond numbers:** instrumented semantics, products, disjunctions, and the heap.
+
+To go further, pick a direction:
+
+- **Theory:** Cousot's *Principles of Abstract Interpretation*. With this course behind you, its chapters on Galois connections, fixpoints, widening and reduced products should read as precise versions of things you've already seen running.
+- **Numerical domains in depth:** Miné's tutorial (chapter 6 and 8 readings), then the APRON and ELINA libraries.
+- **Building analyzers for real languages:** Rival & Yi for the overall architecture; Møller & Schwartzbach (free online) for dataflow, pointer and interprocedural analysis.
+- **Hands-on projects with this code:** add a reduced product of intervals and parity; add `break` to Tiny (chapter 7, exercise 4); implement octagons on top of the zone code (chapter 8, exercise 5); add a "program counter" label to taint so that it catches implicit flows (exercise 2 below).
+
+## Exercises
+
+<Exercise n={1} title="a nullness domain">
+
+Write the nullness domain as the course did for signs: the basic cases, γ, the join, the filter for `p != null` and `p == null`, and the alarm rule for `p.f`. What does the analysis say after this code, and is the alarm real?
+
+```
+p = null;
+if (c) { p = new Box(); }
+if (c) { p.f = 1; }
+```
+
+<Fragment slot="solution">
+
+Basic cases: *Null* and *NonNull*. $\gamma(\textit{Null}) = \{\texttt{null}\}$, $\gamma(\textit{NonNull})$ = every object, *MaybeNull* covers both. The join is the union of the cases, exactly like parity. `p != null` keeps the *NonNull* case, `p == null` keeps the *Null* case. `p.f` is safe only if `p` is *NonNull*.
+
+After the first `if`, $p$ is *Null* ⊔ *NonNull* = *MaybeNull*. Inside the second `if`, the test is on `c`, not on `p`, so the filter learns nothing about `p`: still *MaybeNull*, and `p.f = 1` gets an alarm.
+
+The alarm is **false**: when `c` is true, both `if`s take their `then` branch, so `p` is non-null. The fact needed is a relation, "c is true ⟹ p is non-null", which a per-variable domain can't hold. Disjunctions can: keeping the two cases of the first `if` separate ("c and p NonNull" or "not c and p Null"), the second `if` filters out the second case and the alarm disappears. This pattern, correlated branches on the same condition, is one of the main reasons trace partitioning exists.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={2} title="catching implicit flows">
+
+Change the taint analysis so that *An implicit flow* marks `x` as tainted. Which part of the analyzer has to change? What new false alarms would this cause?
+
+<Fragment slot="solution">
+
+Track a **program-counter label**: the taint of the conditions that decide whether the current code runs. On `if (secret > 0)`, the then-branch runs with $pc = \textit{tainted}$, and every assignment in it labels its result with $\text{taint}(e) \sqcup pc$. So `x = 1` makes `x` tainted. The same holds for loop bodies (and for the code after a loop whose exit depends on a tainted test, since whether it is reached reveals something too).
+
+This isn't a change to the value domain: the label depends on the *control* context, so it belongs in the solver (or in an abstract state that carries $pc$ along). That's why taint tools that only track data are so much simpler.
+
+The cost: many more tainted values. Any variable assigned inside an `if` on user input becomes tainted, even when nobody cares. That's why most taint tools for injection bugs ignore implicit flows on purpose, while **information-flow** analyses, which must prove that secrets don't leak (noninterference), have to track them.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={3} title="reducing a product">
+
+In the product of intervals and parity, write the reduction step: given an interval $[a, b]$ and a parity, what is the most precise pair describing the same set? Apply it to ($[1, 4]$, even), ($[3, 3]$, even), and ($[2, 2]$, ⊤).
+
+<Fragment slot="solution">
+
+Move each finite bound inward to the nearest integer with the right parity. For *even*: if $a$ is odd, use $a + 1$; if $b$ is odd, use $b - 1$. Symmetrically for *odd*. If the result is empty, the pair is $\bot$. In the other direction, an interval holding a single number fixes the parity.
+
+- ($[1, 4]$, even) becomes ($[2, 4]$, even).
+- ($[3, 3]$, even) becomes $\bot$: no number is both.
+- ($[2, 2]$, ⊤) becomes ($[2, 2]$, even).
+
+Each side now carries information learned from the other. In general the reduction is the best pair with the same concretization, $\alpha(\gamma(a, b))$, and computing it exactly can be expensive, so analyzers often settle for a few cheap reduction rules.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={4} title="how many cases?">
+
+A program has 10 `if`s in a row, each assigning a different variable on each branch. How many cases would an unbounded disjunctive analysis keep at the end? What does the playground's version (at most 4 cases) do? Where would you choose to split and merge if you only cared about one division at the end of the program?
+
+<Fragment slot="solution">
+
+$2^{10} = 1024$ cases: each `if` doubles them, since its two branches lead to different states. The bounded version keeps up to 4 cases, and as soon as a join would produce 5 or more, it joins them all into one interval state. In practice that means that after the third `if`, everything is merged and the analysis behaves like plain intervals.
+
+The smart choice is to look at what the division depends on: keep the cases of the `if`s that assign the divisor (or a variable it is computed from), and merge all the others right away. That's the idea behind trace partitioning heuristics: split only on the decisions that matter for a later check, and merge back as soon as the check is done.
+
+</Fragment>
+</Exercise>
+
+<Exercise n={5} title="strong or weak?">
+
+For each write, say whether a sound analysis can perform a strong update (replace the old value) or only a weak one, assuming allocation-site abstraction:
+
+```
+a = new Box();          // site A
+a.v = 1;                // (1)
+for (i = 0; i < n; i++) {
+  b = new Box();        // site B
+  b.v = i;              // (2)
+}
+c = (n > 0) ? a : b;
+c.v = 5;                // (3)
+```
+
+<Fragment slot="solution">
+
+(1) **Strong.** `a` points to site A, which is allocated once (outside any loop): one abstract object, one concrete object.
+
+(2) **Weak** with plain allocation sites: site B is in a loop, so its abstract object is a summary of all the boxes created by the loop. The analysis can't know that `b` designates only the newest one. Refinements like *recency abstraction* keep a separate abstract object for "the most recently allocated B", which makes this write strong again.
+
+(3) **Weak.** `c` may point to A or to B: the write may change either, so both keep their old values joined with 5.
+
+</Fragment>
+</Exercise>
+
+<Deeper>
+
+- **Cousot, *Principles of Abstract Interpretation***: the chapters on combining abstractions (reduced product) and on disjunctive completion and partitioning, which make the two constructions of this chapter precise.
+- **X. Rival & L. Mauborgne, "The trace partitioning abstract domain" (TOPLAS 2007)**: how Astrée decides which cases to keep apart.
+- **B. Blanchet, P. Cousot, R. Cousot et al., "A static analyzer for large safety-critical software" (PLDI 2003)**: the Astrée paper. Shows how all the ideas of this course were combined and tuned to reach zero false alarms on real flight software.
+- **A. Sabelfeld & A. Myers, "Language-based information-flow security" (2003)**: explicit and implicit flows, noninterference, and why taint is only the start.
+- **Møller & Schwartzbach, *Static Program Analysis***: freely available; its chapters on pointer analysis (Andersen, Steensgaard) and interprocedural analysis (summaries, context sensitivity) are the best next step for the last sections of this chapter.
+- **C. Calcagno, D. Distefano, P. O'Hearn & H. Yang, "Compositional shape analysis by means of bi-abduction" (POPL 2009)**: the idea behind Infer's per-procedure summaries of heap shapes.
+- **P. Cousot, "Types as abstract interpretations" (POPL 1997)**: type systems seen as abstract interpreters.
+- **Rival & Yi**: the chapters on memory abstraction and on the design of industrial analyzers.
+
+</Deeper>
+
+<InTheCode>
+
+The code for this chapter:
+
+- [`src/lib/domains/taint.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/taint.ts): value domain: clean or tainted
+- [`src/lib/domains/product.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/product.ts): value domain: the product of any two value domains (here, intervals and taint)
+- [`src/lib/disjunctive.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/disjunctive.ts): abstract state: up to k cases of another abstract state, read as "or"
+- [`src/lib/beyond.test.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/beyond.test.ts): the tests behind this chapter, including the labelled interpreter that checks taint
+
+</InTheCode>
