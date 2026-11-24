@@ -151,6 +151,25 @@ assign(s, x, e) {
 
 **Tests** work the same way. Move everything to one side: `a < b` is $a - b < 0$, that is $a - b + 1 \le 0$ on integers. If $a - b$ has the shape $v_i - v_j + c$, add the constraint and close. Otherwise, fall back on intervals and refine the variables that appear alone, as signs did in chapter 3. For instance, `i < n` adds $i - n \le -1$. Then `k = i` adds $k = i$, and closure derives $k - n \le -1$ on its own: the array access is in bounds.
 
+## Where does y = x come from?
+
+No line of *Two counters* says that `x` and `y` are equal, and the analyzer doesn't search for relations. It doesn't need to. A zone keeps a bound on the difference of **every** pair of variables, at every point, just as intervals keep bounds on every variable whether or not a test mentions it. `y = x` is simply what the bound on $y - x$ turns out to be. Follow it through the first round of the loop:
+
+| Line | Statement | What happens to $y - x$ | The zone knows |
+| --- | --- | --- | --- |
+| 1–2 | `x = 0; y = 0;` | both are 0 | $y - x = 0$ |
+| 4 | `x = x + 1;` | $x$ goes up by 1, so $y - x$ goes down by 1 | $y - x = -1$ |
+| 5 | `y = y + 1;` | $y$ goes up by 1, so $y - x$ goes back up by 1 | $y - x = 0$ |
+| 3 | loop head | join the state before the loop ($y - x = 0$) with the end of the body ($y - x = 0$) | $y - x = 0$ |
+
+Each step is exact. `x = x + 1` shifts every bound involving `x`, including its differences with the other variables (the second assignment rule above). The join keeps $0$ because both sides agree on it. Every later round does the same thing, so the relation is never disturbed.
+
+Why, then, does the playground show `y = x` only from line 3 on? Its annotations list only the relations that the intervals don't already imply. At line 2, `x: 0  y: 0` already says $y = x$. At line 4 in the first round, `x: 1  y: 0` already says $y = x - 1$. At the loop head after the first join, $x \in [0, 1]$ and $y \in [0, 1]$ alone would allow any $y - x$ in $[-1, 1]$, so the tighter $y = x$ is worth printing. It was there from the start.
+
+Intervals, in contrast, forget the link right away: after one round they say $x \in [0, 1]$ and $y \in [0, 1]$, which allows $(x, y) = (0, 1)$. Once forgotten, nothing can bring it back.
+
+You can watch all this happen in the playground at the end of the chapter. Press ⏮ under the code, then ▶ to advance one step at a time. The text under the buttons explains each step and shows the full state, including the relations that the line annotations leave out.
+
 ## Join, widening and the lockstep invariant
 
 The join is the entrywise maximum of closed matrices: each constraint is loosened just enough to hold in both states. Widening is the same idea as for intervals, entry by entry: keep the bounds that held still, drop the ones that moved to $+\infty$.
@@ -180,7 +199,7 @@ That's the general pattern. Relations that hold at every iteration survive widen
 
 The playground below offers zones and intervals. Switch between them on each example:
 
-<Playground modes="signs,collect" domains="zones,intervals" example="sum" examples="two-counters,copy,sum,bounds,square,countdown,abs,nested" compare={true} />
+<Playground modes="signs,collect" domains="zones,intervals" example="two-counters" examples="two-counters,copy,sum,bounds,square,countdown,abs,nested" compare={true} />
 
 The relations a zone has found are shown after the `│` in each annotation. Only the ones that the intervals alone don't imply are listed. Things to notice:
 

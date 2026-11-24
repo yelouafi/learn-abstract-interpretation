@@ -13,7 +13,7 @@ import { parse, ParseError } from '../lib/parser';
 import type { Program } from '../lib/ast';
 import { run, programPoints, type Env, type Point } from '../lib/interp';
 import { collect } from '../lib/collecting';
-import { analyze, analyzeStates, type AEnv, type StateAnalysis } from '../lib/analyzer';
+import { analyze, analyzeStates, type AEnv, type StateAnalysis, type TraceStep } from '../lib/analyzer';
 import { zoneStates } from '../lib/domains/zones';
 import { IntervalDomain } from '../lib/domains/interval';
 import type { ValueDomain } from '../lib/domain';
@@ -53,20 +53,23 @@ const entryById = (id: string) => (id === 'zones' ? ZONES : domainById(id));
 interface View<V> {
   a: StateAnalysis<unknown>;
   show(s: unknown): string;
+  /** Like show, with everything spelled out (for zones: also the relations the intervals imply). */
+  showFull(s: unknown): string;
   /** The value of one variable, in the value domain D used by the comparison table. */
   project(s: unknown, x: string): V;
   D: ValueDomain<V>;
 }
 
-function analysisView(p: Program, entry: DomainEntry): View<any> {
+function analysisView(p: Program, entry: DomainEntry, trace?: TraceStep<unknown>[]): View<any> {
   if (entry.id === 'zones') {
     const Z = zoneStates(p.vars);
-    return { a: analyzeStates(p, Z) as StateAnalysis<unknown>, show: (s) => Z.show(s as any), project: (s, x) => Z.project(s as any, x), D: IntervalDomain };
+    return { a: analyzeStates(p, Z, { trace }) as StateAnalysis<unknown>, show: (s) => Z.show(s as any), showFull: (s) => Z.show(s as any, true), project: (s, x) => Z.project(s as any, x), D: IntervalDomain };
   }
   const D: ValueDomain<any> = entry.domain;
   return {
-    a: analyze(p, D) as StateAnalysis<unknown>,
+    a: analyze(p, D, { trace }) as StateAnalysis<unknown>,
     show: (s) => showAEnv(D, s as AEnv<any>),
+    showFull: (s) => showAEnv(D, s as AEnv<any>),
     project: (s, x) => ((s as AEnv<any>) ? (s as Record<string, any>)[x] : D.bottom),
     D,
   };
@@ -80,6 +83,8 @@ class Playground extends HTMLElement {
   private panel!: HTMLElement;
   private timer = 0;
   private step = -1;
+  /** Position of the analysis stepper; -1 means "the final result". */
+  private astep = -1;
   private inputs = '';
   private range = 3;
   private compare = false;
@@ -99,7 +104,7 @@ class Playground extends HTMLElement {
 
     const select = h('select', { 'aria-label': 'Example program' },
       ...ids.map((id) => { const o = h('option', { value: id }, example(id).title); if (id === initial.id) o.selected = true; return o; }));
-    select.addEventListener('change', () => { this.editor.setDoc(example(select.value).code); this.step = -1; });
+    select.addEventListener('change', () => { this.editor.setDoc(example(select.value).code); this.step = -1; this.astep = -1; });
 
     const tabs = h('div', { class: 'tabs', role: 'tablist' });
     if (this.modes.length > 1) {
@@ -118,7 +123,7 @@ class Playground extends HTMLElement {
 
     this.editor = createEditor(editorHost, initial.code, () => {
       clearTimeout(this.timer);
-      this.timer = window.setTimeout(() => { this.step = -1; this.refresh(); }, 250);
+      this.timer = window.setTimeout(() => { this.step = -1; this.astep = -1; this.refresh(); }, 250);
     });
     this.refresh();
   }
@@ -144,7 +149,7 @@ class Playground extends HTMLElement {
   // ---- concrete execution ----------------------------------------------------------
   private showRun(p: Program) {
     const field = h('input', { type: 'text', value: this.inputs, 'aria-label': 'Inputs', spellcheck: 'false' }) as HTMLInputElement;
-    field.addEventListener('input', () => { this.inputs = field.value; this.step = -1; clearTimeout(this.timer); this.timer = window.setTimeout(() => this.refresh(), 300); });
+    field.addEventListener('input', () => { this.inputs = field.value; this.step = -1; this.astep = -1; clearTimeout(this.timer); this.timer = window.setTimeout(() => this.refresh(), 300); });
     this.controls.append(h('label', {}, 'Inputs ', field), h('span', { class: 'hint' }, 'successive values returned by input(); missing ones are 0'));
 
     const values = this.inputs.split(/[\s,]+/).filter(Boolean).map(Number).filter((n) => Number.isFinite(n)).map(Math.trunc);
@@ -224,8 +229,10 @@ class Playground extends HTMLElement {
 
   // ---- sign analysis ----------------------------------------------------------------
   private showSigns(p: Program) {
-    const view = analysisView(p, this.domain);
+    const trace: TraceStep<unknown>[] = [];
+    const view = analysisView(p, this.domain, trace);
     const a = view.a;
+    const decorateFinal = () => {
     const annots = new Map<number, Annotation>();
     const cls = new Map<number, string>();
     for (const [ln, pt] of pointsByLine(p)) {
@@ -249,6 +256,7 @@ class Playground extends HTMLElement {
     });
     walk(p.body);
     this.editor.decorate(annots, cls);
+    };
 
     const toggle = h('input', { type: 'checkbox' }) as HTMLInputElement;
     toggle.checked = this.compare;
@@ -256,10 +264,60 @@ class Playground extends HTMLElement {
     if (this.domains.length > 1) {
       const pick = h('select', { 'aria-label': 'Abstract domain' },
         ...this.domains.map((d) => { const o = h('option', { value: d.id }, d.label); o.selected = d === this.domain; return o; })) as HTMLSelectElement;
-      pick.addEventListener('change', () => { this.domain = entryById(pick.value); this.refresh(); });
+      pick.addEventListener('change', () => { this.domain = entryById(pick.value); this.astep = -1; this.refresh(); });
       this.controls.append(h('label', {}, 'Domain ', pick));
     }
     this.controls.append(h('label', {}, toggle, ' Compare with testing'));
+
+    // ---- stepper: replay the analysis one step at a time; the last position is the final result ----
+    const n = trace.length;
+    if (this.astep < 0 || this.astep > n) this.astep = n;
+    const lineOf = new Map(programPoints(p).map((q) => [q.key, q.line]));
+    const note = h('div', { class: 'trace-note' });
+    const counter = h('span', { class: 'counter' });
+    const slider = h('input', { type: 'range', min: '0', max: String(n), value: String(this.astep), 'aria-label': 'Analysis step' }) as HTMLInputElement;
+    const isHead = (k: number) => ['head', 'widen', 'narrow', 'stable'].includes(trace[k]?.kind);
+    const render = () => {
+      slider.value = String(this.astep);
+      if (this.astep === n) {
+        decorateFinal();
+        counter.textContent = 'final result';
+        note.replaceChildren(h('span', { class: 'muted' }, `The analysis took ${n} steps. Step through them from the start (⏮) to watch each state being computed.`));
+        return;
+      }
+      const annots = new Map<number, Annotation>();
+      for (let k = 0; k <= this.astep; k++) {
+        const t = trace[k];
+        if (t.point) annots.set(lineOf.get(t.point)!, { text: view.show(t.state), cls: k === this.astep ? 'current' : 'abstract' });
+      }
+      const cur = trace[this.astep];
+      this.editor.decorate(annots, new Map([[cur.line, 'cm-line-current']]));
+      counter.textContent = `step ${this.astep + 1} / ${n}`;
+      note.replaceChildren(h('p', {}, h('b', {}, `Line ${cur.line}. `), cur.note), h('p', { class: 'state' }, view.showFull(cur.state)));
+    };
+    const btn = (label: string, title: string, f: () => void) => {
+      const b = h('button', { type: 'button', title, 'aria-label': title }, label);
+      b.addEventListener('click', () => { f(); render(); });
+      return b;
+    };
+    slider.addEventListener('input', () => { this.astep = Number(slider.value); render(); });
+    const nextHead = (dir: 1 | -1) => {
+      for (let k = this.astep + dir; k >= 0 && k < n; k += dir) if (isHead(k)) { this.astep = k; return; }
+      this.astep = dir > 0 ? n : 0;
+    };
+    this.panel.append(h('div', { class: 'astepper' },
+      h('div', { class: 'stepper' },
+        btn('⏮', 'First step', () => (this.astep = 0)),
+        btn('◀', 'Previous step', () => (this.astep = Math.max(0, this.astep - 1))),
+        slider,
+        btn('▶', 'Next step', () => (this.astep = Math.min(n, this.astep + 1))),
+        btn('⏭', 'Final result', () => (this.astep = n)),
+        counter),
+      h('div', { class: 'stepper jumps' },
+        btn('◀ loop head', 'Previous loop-head step', () => nextHead(-1)),
+        btn('loop head ▶', 'Next loop-head step', () => nextHead(1))),
+      note));
+    render();
 
     const alarms = a.alarms.length
       ? h('ul', { class: 'alarms' }, ...a.alarms.map((al) => h('li', { class: al.severity }, `Line ${al.line}: ${al.message}`)))

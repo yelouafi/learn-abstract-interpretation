@@ -94,6 +94,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
 .cm-annot.good { color: var(--ok); background: var(--ok-soft); }
 .cm-annot.warn { color: var(--warn); background: var(--warn-soft); }
 .cm-annot.bad { color: var(--err); background: var(--err-soft); }
+.cm-annot.current { color: var(--surface); background: var(--accent); }
 .cm-line-current { background: var(--accent-soft) !important; }
 .cm-line-error { background: var(--err-soft) !important; }
 .cm-line-warn { background: var(--warn-soft) !important; }
