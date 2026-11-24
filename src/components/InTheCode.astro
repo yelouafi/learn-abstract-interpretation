@@ -1,0 +1,16 @@
+---
+// A collapsed list of the source files behind a chapter, for readers who want to read the code.
+// Kept out of the prose so that the text never depends on file or type names.
+---
+<details class="incode">
+  <summary>In the code</summary>
+  <div class="body"><slot /></div>
+</details>
+
+<style>
+  .incode { margin: 2em 0 0; padding: 0.6em 1.1em; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-soft); font-family: var(--sans); font-size: 0.9rem; }
+  summary { cursor: pointer; font-weight: 650; color: var(--muted); }
+  .body { margin-top: 0.5em; }
+  .body :global(ul) { margin: 0.3em 0; padding-left: 1.2em; }
+  .body :global(p) { margin: 0.4em 0; }
+</style>

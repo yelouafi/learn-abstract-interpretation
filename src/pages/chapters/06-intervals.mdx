@@ -5,6 +5,8 @@ slug: 06-intervals
 import Insight from '../../components/Insight.astro';
 import Exercise from '../../components/Exercise.astro';
 import Deeper from '../../components/Deeper.astro';
+import InTheCode from '../../components/InTheCode.astro';
+import AnalyzerMap from '../../components/AnalyzerMap.astro';
 import Playground from '../../components/Playground.astro';
 import FixpointStepper from '../../components/FixpointStepper.astro';
 
@@ -129,6 +131,10 @@ Narrowing doesn't always help. Try **Loop with !=** (`while (x != 10)`). Widenin
 
 ## Try it
 
+In the picture of chapter 3, this chapter changed two layers, and the line between them matters:
+
+<AnalyzerMap focus="value,solver" value="This chapter: intervals instead of signs. The domain also provides widening and narrowing, because only it knows how to extrapolate its own values." solver="Loops now widen after a few rounds and narrow at the end. The solver decides where and when; it never looks inside an interval." />
+
 The playground now offers intervals in its **Domain** picker, with widening (delay 3) and narrowing on. Open **Loop iterations** to see where the analyzer widened (∇) and narrowed (Δ).
 
 <Playground modes="signs,collect" domains="intervals,signs8" example="count" examples="count,countdown,abs,product,sum,not-equal,division,copy,forever" />
@@ -214,6 +220,16 @@ Good thresholds are the constants that appear in the program's tests (here, 100)
 - **P. Cousot & R. Cousot, "Static determination of dynamic properties of programs" (1976)** introduced interval analysis, and **the 1977 POPL paper** (chapter 5's reading) defines widening and narrowing in general.
 - **Antoine Miné, *Tutorial on Static Inference of Numeric Invariants by Abstract Interpretation***: a careful, practical treatment of intervals, widening with thresholds, and their implementation. It is the best next step after this chapter, and covers the relational domains of chapter 8.
 - **Møller & Schwartzbach**: the chapter on widening and narrowing does interval analysis on their toy language, with the same up-then-down recipe.
-- **Rival & Yi**: their running example becomes intervals with widening; compare their loop iteration with `analyzer.ts`.
+- **Rival & Yi**: their running example becomes intervals with widening; compare their loop iteration with ours (see *In the code*).
 
 </Deeper>
+
+<InTheCode>
+
+The code for this chapter:
+
+- [`src/lib/domains/interval.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/interval.ts): value domain: intervals, with widening and narrowing
+- [`src/lib/analyzer.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/analyzer.ts): solver: the loop handling, with the widening delay and the narrowing passes
+- [`src/lib/equations.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/equations.ts): solver: the same, for the equation widget
+
+</InTheCode>

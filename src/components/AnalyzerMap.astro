@@ -1,0 +1,50 @@
+---
+// The three layers of the analyzer, as introduced in chapter 3. Later chapters show the
+// same picture with the layer they change highlighted, and a note saying what changed.
+interface Props {
+  /** Comma list of layers to highlight: solver, state, value. */
+  focus?: string;
+  solver?: string;
+  state?: string;
+  value?: string;
+  caption?: string;
+}
+const { focus = '', solver, state, value, caption } = Astro.props;
+const on = new Set(focus.split(',').map((s) => s.trim()).filter(Boolean));
+const cls = (k: string) => (on.size === 0 ? 'layer' : on.has(k) ? 'layer on' : 'layer off');
+---
+<figure class="amap">
+  <div class={cls('solver')}>
+    <p class="name">Solver <span>knows the program</span></p>
+    <p class="what">Walks the program. Runs both branches of an <code>if</code> and joins the results, repeats a loop until its state stops changing, checks assertions.</p>
+    {solver && <p class="note">{solver}</p>}
+  </div>
+  <p class="arrow">↓ asks the state layer to <b>assign</b>, <b>filter by a test</b>, <b>join</b>, <b>compare</b></p>
+  <div class={cls('state')}>
+    <p class="name">Abstract state <span>knows one program point</span></p>
+    <p class="what">What is known about <em>all</em> variables at one point, or ⊥ if the point is unreachable. So far: one abstract value per variable.</p>
+    {state && <p class="note">{state}</p>}
+  </div>
+  <p class="arrow">↓ asks, variable by variable, for <b>arithmetic</b>, <b>what a test teaches</b>, <b>join</b></p>
+  <div class={cls('value')}>
+    <p class="name">Value domain <span>knows one variable</span></p>
+    <p class="what">The abstract values (a sign, an interval, …) and their lattice, constants, abstract <code>+ − × /</code>, and what a test like <code>x &gt; 0</code> says about each side.</p>
+    {value && <p class="note">{value}</p>}
+  </div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<style>
+  .amap { margin: 1.6em 0; font-family: var(--sans); font-size: 0.9rem; line-height: 1.45; }
+  .layer { border: 1.5px solid var(--border); border-radius: 10px; padding: 0.55em 0.9em; background: var(--surface); }
+  .layer.on { border-color: var(--accent); background: var(--accent-soft); }
+  .layer.off { opacity: 0.6; }
+  .name { margin: 0; font-weight: 700; }
+  .name span { font-weight: 400; color: var(--muted); margin-left: 0.4em; }
+  .what { margin: 0.2em 0 0; }
+  .note { margin: 0.45em 0 0; padding-top: 0.4em; border-top: 1px dashed var(--border); color: var(--accent); font-weight: 600; }
+  .layer.on .note { border-top-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .arrow { margin: 0.25em 0 0.25em 1.2em; color: var(--muted); font-size: 0.82rem; }
+  .arrow b { font-weight: 600; color: var(--text); }
+  figcaption { margin-top: 0.6em; }
+</style>

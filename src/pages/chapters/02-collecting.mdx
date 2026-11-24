@@ -5,6 +5,7 @@ slug: 02-collecting
 import Insight from '../../components/Insight.astro';
 import Exercise from '../../components/Exercise.astro';
 import Deeper from '../../components/Deeper.astro';
+import InTheCode from '../../components/InTheCode.astro';
 import Playground from '../../components/Playground.astro';
 
 Before approximating what a program does, we need to say exactly what it does. In this chapter we write an interpreter for a tiny language, then move from "what happens on *this* input" to "what can happen on *any* input". That second object, the **collecting semantics**, is what every analysis in this course approximates.
@@ -29,11 +30,11 @@ A few conventions keep things simple:
 - Integers are unbounded (no overflow) and `/` truncates toward zero, so `-7 / 2` is `-3`. Dividing by zero is a runtime error.
 - Conditions use `< <= > >= == !=`, combined with `&&`, `||` and `!`.
 
-The [Tiny reference](../../language/) has the full grammar. The parser is a ~200-line recursive-descent parser in `src/lib/parser.ts`, worth a read if you have never written one.
+The [Tiny reference](../../language/) has the full grammar. The parser is a ~200-line recursive-descent parser, worth a read if you have never written one (see *In the code* at the end of the chapter).
 
 ## Running a program
 
-The interpreter (`src/lib/interp.ts`) is the most ordinary code in the project: walk the syntax tree, keep a map from variable names to numbers. Try it: change the input, then drag the slider to step through the execution.
+The interpreter is the most ordinary code in the project: walk the syntax tree, keep a map from variable names to numbers. Try it: change the input, then drag the slider to step through the execution.
 
 <Playground modes="run" example="countdown" examples="countdown,abs,product,division" inputs="3" />
 
@@ -180,3 +181,14 @@ For example $(x{=}1, y{=}1, z{=}9)$: each value appears in its set, but $z = x \
 - **Møller & Schwartzbach**: the chapter on the TIP language introduces their toy language and its control-flow graphs; skim it to compare with Tiny.
 
 </Deeper>
+
+<InTheCode>
+
+The code for this chapter, if you want to read it:
+
+- [`src/lib/ast.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/ast.ts): the syntax tree of Tiny programs
+- [`src/lib/parser.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/parser.ts): the lexer and recursive-descent parser
+- [`src/lib/interp.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/interp.ts): the interpreter, program points and execution traces
+- [`src/lib/collecting.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/collecting.ts): the collecting semantics by exhaustive testing on small inputs
+
+</InTheCode>

@@ -5,6 +5,8 @@ slug: 03-signs
 import Insight from '../../components/Insight.astro';
 import Exercise from '../../components/Exercise.astro';
 import Deeper from '../../components/Deeper.astro';
+import InTheCode from '../../components/InTheCode.astro';
+import AnalyzerMap from '../../components/AnalyzerMap.astro';
 import Playground from '../../components/Playground.astro';
 import SignLattice from '../../components/SignLattice.astro';
 import SignTables from '../../components/SignTables.astro';
@@ -107,7 +109,7 @@ The collected signs are $\{-, 0, +\}$, which summarizes as $\top$. Try other com
 
 <CaseSplit a="top" op="+" b="pos" />
 
-In code, the recipe is three small functions. This snippet is complete; the real file, `src/lib/domains/sign.ts`, has the same structure with all four operators:
+In code, the recipe is three small functions. This snippet is complete; the real code has the same structure with all four operators:
 
 ```ts
 type BasicSign = 'neg' | 'zero' | 'pos';
@@ -188,13 +190,13 @@ refine(op, a, b) {
 }
 ```
 
-`canBeTrue` answers questions like "can some positive be greater than zero?". The file decides them by comparing the smallest and largest number of each basic sign: `x < y` is possible exactly when the smallest `x` is below the largest `y`.
+`canBeTrue` answers questions like "can some positive be greater than zero?". The real code decides them by comparing the smallest and largest number of each basic sign: `x < y` is possible exactly when the smallest `x` is below the largest `y`.
 
 Refinement only flows back into a variable when it appears bare in the comparison. For `x + 1 > 0` we learn something about the *value* of `x + 1` but don't push it back to `x`. Doing that ("backward abstract arithmetic") is a nice extension for later.
 
 ## Putting it together: the analyzer
 
-An **abstract state** maps each variable to a sign, or is $\bot$ if the point is unreachable. The analyzer (`src/lib/analyzer.ts`) mirrors the interpreter of chapter 2 statement by statement, and solves the same equations with signs in place of sets:
+An **abstract state** maps each variable to a sign, or is $\bot$ if the point is unreachable. The analyzer mirrors the interpreter of chapter 2 statement by statement, and solves the same equations with signs in place of sets:
 
 | Statement | Interpreter (one state) | Analyzer (abstract state) |
 | --- | --- | --- |
@@ -225,6 +227,22 @@ The loop computes the increasing sequence $H_0 \sqsubseteq H_1 \sqsubseteq H_2 \
 With $n$ variables and height-2 signs, there are at most $2n + 1$ iterations. Chapter 6 introduces intervals, a lattice of *infinite* height, where this argument fails and a new idea (widening) is needed.
 
 </Insight>
+
+## How the analyzer is built
+
+Before trying it, step back and look at its shape. The analyzer has three layers, and each one only talks to the layer below it:
+
+<AnalyzerMap />
+
+The **solver** is the table above: it knows `if`, `while` and `assert`, but nothing about signs. The **abstract state** is the "one sign per variable" map, plus ⊥, with the four operations the solver needs. Only the **value domain** knows what a sign is: everything in the first half of this chapter (the case tables, summarizing, tests as filters) lives there.
+
+This split lets the rest of the course change one thing at a time. Later chapters show this picture again, with the layer they change highlighted:
+
+- chapter 4: a better value domain, and the theory that says when a domain is correct;
+- chapter 5: why the solver's "repeat until nothing changes" gives the right answer;
+- chapter 6: intervals, a value domain that forces the solver to handle loops differently;
+- chapter 7: a solver built for real programs;
+- chapter 8: a different abstract state, one that records relations between variables.
 
 ## Try it
 
@@ -327,3 +345,14 @@ Starting at $\top$ is sound but throws away everything known before the loop, an
 - **Møller & Schwartzbach**: the chapters on lattice theory and dataflow analysis use sign analysis as the first example, presented as a monotone framework on a control-flow graph. Seeing the same analysis from that angle is a good preview of chapter 7.
 
 </Deeper>
+
+<InTheCode>
+
+The code for this chapter, layer by layer:
+
+- [`src/lib/domains/sign.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/sign.ts): value domain: the 5 signs, the case tables and the tests
+- [`src/lib/domain.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domain.ts): value domain: the list of operations every value domain provides
+- [`src/lib/states.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/states.ts): abstract state: one abstract value per variable, with assign, filter, join and compare
+- [`src/lib/analyzer.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/analyzer.ts): solver: the analyzer that walks the program
+
+</InTheCode>

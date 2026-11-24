@@ -5,6 +5,8 @@ slug: 04-galois
 import Insight from '../../components/Insight.astro';
 import Exercise from '../../components/Exercise.astro';
 import Deeper from '../../components/Deeper.astro';
+import InTheCode from '../../components/InTheCode.astro';
+import AnalyzerMap from '../../components/AnalyzerMap.astro';
 import Playground from '../../components/Playground.astro';
 import GaloisExplorer from '../../components/GaloisExplorer.astro';
 import CaseSplit from '../../components/CaseSplit.astro';
@@ -33,11 +35,15 @@ meet(a, b)     // a ⊓ b  is  the intersection
 summarize(s)   // the set itself: no rounding!
 ```
 
-Steps 1 and 2 of the recipe are unchanged: the same `possibleSigns` and `canBeTrue` from chapter 3 do the case-by-case work. The *only* difference between the two domains is `summarize`, which is α on basic signs. (In `src/lib/domains/signs8.ts` the set is stored as a 3-bit mask, so union is `|` and intersection is `&`. That is an implementation detail.)
+Steps 1 and 2 of the recipe are unchanged: the same case tables from chapter 3 (which signs can $x + y$ have? can $x > y$ be true?) do the case-by-case work. The *only* difference between the two domains is `summarize`, which is α on basic signs. (The real code stores the set as a 3-bit mask, so union is `|` and intersection is `&`. That is an implementation detail.)
 
 Switch the calculator between 5 and 8 signs on $(+) \div (+)$: the case table is identical, only the summary changes, from $\top$ to $\ge 0$.
 
 <CaseSplit a="pos" op="/" b="pos" switchable={true} />
+
+In the picture of chapter 3, only the bottom layer changed:
+
+<AnalyzerMap focus="value" value="This chapter: 8 extended signs instead of 5. The solver and the abstract state are unchanged." />
 
 Here is the same analyzer with either domain. Switch the **Domain** picker on *Countdown* and *Absolute value*:
 
@@ -98,7 +104,7 @@ This one equivalence has a surprising number of consequences, and each one is so
 
 </Insight>
 
-Consequence 3 is worth a pause. In chapter 3 we wrote α for signs by hand, as `summarize` on basic signs. Here `alphaOf` is one generic function that works for *any* domain given only `join` and `fromConst`. The playground's "Compare with testing" table and the explorer above both use it. A theorem turned into a reusable helper.
+Consequence 3 is worth a pause. In chapter 3 we wrote α for signs by hand, as `summarize` on basic signs. Here α comes for free, for *any* domain: abstract each element on its own, then join the results. The code has a single generic function for this, used by the playground's "Compare with testing" table and by the explorer above. A theorem turned into a reusable helper.
 
 ## When there is no best description
 
@@ -142,7 +148,7 @@ $$
 \gamma_{\text{env}}(m) \;=\; \{\, s \mid \forall x,\ s(x) \in \gamma(m(x)) \,\}
 $$
 
-That is the type `AEnv<V>` in `analyzer.ts`: one abstract value per variable. One detail: if *any* variable is $\bot$, no state matches, so the whole environment is $\bot$. The code does this "smashing" in `smash()`. Because this lifting is again a Galois connection, everything in this chapter applies to the analyzer as a whole, not just to single values.
+That is exactly the abstract state layer of chapter 3's analyzer: one abstract value per variable. One detail: if *any* variable is $\bot$, no state matches, so the whole state is $\bot$ (this is called *smashing*). Because this lifting is again a Galois connection, everything in this chapter applies to the analyzer as a whole, not just to single values.
 
 ## Exercises
 
@@ -182,13 +188,15 @@ Paste it in the playground with extended signs: the assertion is proved. With th
 
 <Exercise n={3} title="a parity domain">
 
-Design the parity domain $\bot \sqsubseteq \textit{Even}, \textit{Odd} \sqsubseteq \top$. Give γ, α on a single integer, and the tables for $+$ and $\times$. What does it say about `y` in *Countdown*? Can it prove `assert(y >= 0)`? Sketch it as a `ValueDomain`.
+Design the parity domain $\bot \sqsubseteq \textit{Even}, \textit{Odd} \sqsubseteq \top$. Give γ, α on a single integer, and the tables for $+$ and $\times$. What does it say about `y` in *Countdown*? Can it prove `assert(y >= 0)`? Sketch it as code: what would it need to provide to be a value domain the analyzer can use?
 
 <Fragment slot="solution">
 
 $\gamma(\textit{Even}) = 2\mathbb{Z}$, $\gamma(\textit{Odd}) = 2\mathbb{Z} + 1$; $\alpha(\{n\})$ is the parity of $n$. Addition: $E + E = E$, $E + O = O$, $O + O = E$. Multiplication: $E \times x = E$ for any non-$\bot$ $x$, $O \times O = O$. Division gives $\top$ ($6 / 2 = 3$ is odd, $4 / 2 = 2$ is even).
 
 In *Countdown*, `y` starts at $0$ (*Even*) and the loop adds $2$ (*Even*), so `y` stays *Even* everywhere. But parity says nothing about sign, so `y >= 0` cannot be proved. The two domains know complementary facts; a **product** of signs and parity would know "$y$ is even and $\ge 0$".
+
+The code below is the real thing: the analyzer accepts it as a value domain as is (`ValueDomain` is the name of the list of operations a value domain provides).
 
 ```ts
 // The same recipe as signs, with two basic cases instead of three.
@@ -253,3 +261,13 @@ $\gamma_{5\to 8}$ is the inclusion: each 5-element sign is the 8-element sign wi
 - **Møller & Schwartzbach**: the chapter on abstract interpretation formalizes their dataflow analyses with Galois connections. Short and very concrete.
 
 </Deeper>
+
+<InTheCode>
+
+The code for this chapter:
+
+- [`src/lib/domains/signs8.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/signs8.ts): value domain: the 8 extended signs
+- [`src/lib/domains/index.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/index.ts): the list of value domains, and the generic α
+- [`src/lib/domains/parity.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/parity.ts): value domain: parity, the solution of exercise 3
+
+</InTheCode>
