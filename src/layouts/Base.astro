@@ -1,7 +1,7 @@
 ---
 import 'katex/dist/katex.min.css';
 import '../styles/global.css';
-import { CHAPTERS, chapterUrl, url } from '../chapters';
+import { CHAPTERS, REPO, chapterUrl, url } from '../chapters';
 
 interface Props { title: string; current?: string; description?: string }
 const { title, current, description } = Astro.props;
@@ -32,7 +32,7 @@ const { title, current, description } = Astro.props;
               </li>
             ))}
           </ol>
-          <p class="side-links"><a href={url('playground/')}>Playground</a> · <a href={url('language/')}>Tiny reference</a></p>
+          <p class="side-links"><a href={url('playground/')}>Playground</a> · <a href={url('language/')}>Tiny reference</a> · <a href={REPO}>GitHub</a></p>
         </nav>
       </aside>
       <main>
