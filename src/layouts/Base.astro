@@ -32,8 +32,7 @@ const { title, current, description } = Astro.props;
               </li>
             ))}
           </ol>
-          <p class="side-links"><a href={url('playground/')}>Playground</a> · <a href={url('language/')}>Tiny reference</a></p>
-          <p class="side-links"><a href={REPO}>Source code on GitHub</a></p>
+          <p class="side-links"><a href={url('playground/')}>Playground</a> · <a href={url('language/')}>Tiny reference</a> · <a href={REPO}>GitHub</a></p>
         </nav>
       </aside>
       <main>
@@ -64,7 +63,6 @@ const { title, current, description } = Astro.props;
   nav em { margin-left: auto; font-style: normal; font-size: 0.72rem; border: 1px solid var(--border); border-radius: 99px; padding: 0 0.45rem; align-self: center; }
   .num { color: var(--muted); min-width: 1.1rem; font-variant-numeric: tabular-nums; }
   .side-links { margin-top: 1.2rem; padding: 0 0.5rem; color: var(--muted); }
-  .side-links + .side-links { margin-top: 0.4rem; }
   main { padding: 2.2rem 2.4rem 5rem; max-width: 1180px; }
 
   @media (max-width: 900px) {
