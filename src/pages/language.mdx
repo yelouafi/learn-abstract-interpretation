@@ -65,27 +65,27 @@ States are observed at **program points**, shown at the end of the corresponding
 
 ## Source code
 
-The analyzer has three layers, introduced in [chapter 3](../chapters/03-signs/): the **solver** walks the program, the **abstract state** describes all variables at one program point, and the **value domain** describes one variable.
+All of it is in the [GitHub repository](https://github.com/yelouafi/learn-abstract-interpretation); the README explains how to run the site and the tests locally. The analyzer has three layers, introduced in [chapter 3](../chapters/03-signs/): the **solver** walks the program, the **abstract state** describes all variables at one program point, and the **value domain** describes one variable.
 
 | File | What it does |
 | --- | --- |
-| `src/lib/ast.ts` | syntax tree types |
-| `src/lib/parser.ts` | lexer and recursive-descent parser |
-| `src/lib/interp.ts` | concrete interpreter, program points, traces |
-| `src/lib/collecting.ts` | collecting semantics by exhaustive testing on small inputs |
-| `src/lib/domain.ts` | value domains: the operations every value domain provides |
-| `src/lib/domains/sign.ts` | value domain: the 5 signs |
-| `src/lib/domains/signs8.ts` | value domain: the 8 extended signs |
-| `src/lib/domains/interval.ts` | value domain: intervals, with widening and narrowing |
-| `src/lib/domains/parity.ts` | value domain: parity (even / odd) |
-| `src/lib/domains/zones.ts` | abstract state: zones (difference-bound matrices), the relational domain of chapter 8 |
-| `src/lib/domains/taint.ts` | value domain: taint (clean or tainted), chapter 9 |
-| `src/lib/domains/product.ts` | value domain: the product of two value domains, chapter 9 |
-| `src/lib/domains/index.ts` | the list of value domains, and the generic α |
-| `src/lib/states.ts` | abstract states: one abstract value per variable, or concrete sets of states |
-| `src/lib/disjunctive.ts` | abstract state: up to k cases read as “or”, chapter 9 |
-| `src/lib/analyzer.ts` | solver: the analyzer that walks the syntax tree (chapter 3) |
-| `src/lib/equations.ts` | solver: programs as equation systems, Kleene iteration (chapter 5) |
-| `src/lib/cfg.ts` | control-flow graphs, depth-first search, weak topological order |
-| `src/lib/worklist.ts` | solver: worklist and recursive (Bourdoncle) strategies (chapter 7) |
-| `src/lib/soundness.ts` | checks analysis results against testing |
+| [`src/lib/ast.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/ast.ts) | syntax tree types |
+| [`src/lib/parser.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/parser.ts) | lexer and recursive-descent parser |
+| [`src/lib/interp.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/interp.ts) | concrete interpreter, program points, traces |
+| [`src/lib/collecting.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/collecting.ts) | collecting semantics by exhaustive testing on small inputs |
+| [`src/lib/domain.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domain.ts) | value domains: the operations every value domain provides |
+| [`src/lib/domains/sign.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/sign.ts) | value domain: the 5 signs |
+| [`src/lib/domains/signs8.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/signs8.ts) | value domain: the 8 extended signs |
+| [`src/lib/domains/interval.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/interval.ts) | value domain: intervals, with widening and narrowing |
+| [`src/lib/domains/parity.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/parity.ts) | value domain: parity (even / odd) |
+| [`src/lib/domains/zones.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/zones.ts) | abstract state: zones (difference-bound matrices), the relational domain of chapter 8 |
+| [`src/lib/domains/taint.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/taint.ts) | value domain: taint (clean or tainted), chapter 9 |
+| [`src/lib/domains/product.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/product.ts) | value domain: the product of two value domains, chapter 9 |
+| [`src/lib/domains/index.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/domains/index.ts) | the list of value domains, and the generic α |
+| [`src/lib/states.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/states.ts) | abstract states: one abstract value per variable, or concrete sets of states |
+| [`src/lib/disjunctive.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/disjunctive.ts) | abstract state: up to k cases read as “or”, chapter 9 |
+| [`src/lib/analyzer.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/analyzer.ts) | solver: the analyzer that walks the syntax tree (chapter 3) |
+| [`src/lib/equations.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/equations.ts) | solver: programs as equation systems, Kleene iteration (chapter 5) |
+| [`src/lib/cfg.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/cfg.ts) | control-flow graphs, depth-first search, weak topological order |
+| [`src/lib/worklist.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/worklist.ts) | solver: worklist and recursive (Bourdoncle) strategies (chapter 7) |
+| [`src/lib/soundness.ts`](https://github.com/yelouafi/learn-abstract-interpretation/blob/main/src/lib/soundness.ts) | checks analysis results against testing |

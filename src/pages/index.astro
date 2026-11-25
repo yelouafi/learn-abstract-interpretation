@@ -1,7 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import Playground from '../components/Playground.astro';
-import { CHAPTERS, chapterUrl, url } from '../chapters';
+import { CHAPTERS, REPO, chapterUrl, url } from '../chapters';
 ---
 <Base title="Learn Abstract Interpretation" description="A hands-on course on abstract interpretation for programmers: build a static analyzer in your browser, one idea at a time.">
   <header class="hero">
@@ -22,7 +22,7 @@ import { CHAPTERS, chapterUrl, url } from '../chapters';
   <section class="how">
     <div>
       <h3>Build it</h3>
-      <p>Every idea becomes TypeScript you can read: an interpreter, abstract domains, fixpoint iteration. The analyzer on these pages is the one in <code>src/lib</code>, with tests.</p>
+      <p>Every idea becomes TypeScript you can read: an interpreter, abstract domains, fixpoint iteration. The analyzer on these pages is the one in <a href={`${REPO}/tree/main/src/lib`}><code>src/lib</code></a> of the <a href={REPO}>GitHub repository</a>, with tests.</p>
     </div>
     <div>
       <h3>See it</h3>

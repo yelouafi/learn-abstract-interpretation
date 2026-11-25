@@ -18,6 +18,9 @@ export const CHAPTERS: Chapter[] = [
   { n: 9, slug: '09-beyond', title: 'Beyond numbers', blurb: 'Nullness, taint, pointers, and a tour of industrial analyzers.', ready: true },
 ];
 
+/** The project's source code: the analyzer, the site and the tests. */
+export const REPO = 'https://github.com/yelouafi/learn-abstract-interpretation';
+
 export function url(path = '') {
   const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   return `${base}/${path.replace(/^\//, '')}`;
